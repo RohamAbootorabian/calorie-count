@@ -1,56 +1,70 @@
-# Welcome to your Expo app 👋
+# Calorie Counter 📸🍽️
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Snap a photo of your meal → get calories, macros (protein/carbs/fat), and
+quality nutrients (sugar, salt, fiber) automatically, plus a **food quality
+score** so you track *how well* you eat, not just how much.
 
-## Get started
+## Tech stack
 
-1. Install dependencies
+| Layer | Choice |
+|---|---|
+| App | Expo (React Native) + TypeScript, expo-router |
+| Backend / DB / Auth / Storage | Supabase (Postgres + Auth + Storage + Edge Functions) |
+| AI | Claude vision, called from a Supabase Edge Function (`analyze-meal`) |
+| Nutrition reference | USDA FoodData Central (free) for cross-checking known items |
 
-   ```bash
-   npm install
-   ```
+### Golden rule
 
-2. Start the app
+The phone **never** calls the AI provider directly. Photo → Supabase Edge
+Function → Claude → structured `MealAnalysis` JSON → Postgres → phone. This
+keeps API keys off the device and lets us tune the prompt without shipping an
+app update.
 
-   ```bash
-   npx expo start
-   ```
+## Project structure
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+src/
+  app/          # expo-router screens (file-based routing)
+  components/   # shared UI
+  lib/          # env config + supabase client
+  services/     # analyzeMeal() — client seam to the Edge Function
+  types/        # nutrition.ts — the core MealAnalysis domain model
+supabase/
+  functions/    # analyze-meal Edge Function (to be created)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Getting started
 
-### Other setup steps
+```bash
+# 1. Install deps (already done if you scaffolded)
+npm install
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+# 2. Configure environment
+cp .env.example .env   # then fill in your Supabase URL + anon key
 
-## Learn more
+# 3. Run it (scan the QR code with the Expo Go app on your phone)
+npm start
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+No Xcode/Android Studio needed to start — install **Expo Go** on your phone and
+scan the QR code. Add native tooling later when you need camera/build features.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Roadmap
 
-## Join the community
+### MVP (v1)
+- [ ] Auth + onboarding (set calorie/macro goals or compute from weight goal)
+- [ ] Capture/upload meal photo
+- [ ] `analyze-meal` Edge Function → calories, macros, sugar/salt/fiber, confidence
+- [ ] Editable results (correct portion / swap items) — builds trust
+- [ ] Daily diary with running totals vs. goals
 
-Join our community of developers creating universal apps.
+### v2 — differentiators
+- [ ] **Food quality score** (processing, sugar/salt density, protein & fiber ratios)
+- [ ] Trends & charts over time, streaks
+- [ ] Barcode scanning for packaged food
+- [ ] Water tracking, reminders, export for a coach/doctor
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Notes
+- Calorie estimates from photos are **approximate** — portion size is the
+  biggest error source. Always let users correct the estimate.
+- Food photos + health data → we need a privacy policy before store submission.
