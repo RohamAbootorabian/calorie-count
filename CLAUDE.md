@@ -15,6 +15,19 @@ to load where the last session left off.
 Run `/session-end` to document the journey, write the handoff letter for the
 next session, and push.
 
+## Session health (every message)
+End **every** reply with a one-line **Session health** footer so the user knows
+when to wrap before context fills:
+
+`Session health: 🟢/🟡/🔴 ~NN% of 1M context · <short note>`
+
+- 🟢 `<50%` — plenty of runway, keep going.
+- 🟡 `50–75%` — start wrapping up the current task; finish the thread, don't begin large new work.
+- 🔴 `>75%` — recommend the user run `/session-end` now so nothing is lost.
+
+The percentage is an **estimate** (the model can't read its exact token count).
+For an exact figure the user can run the built-in `/context` command.
+
 ## The development workflow (non-negotiable)
 Every feature or task — however small — goes through this pipeline. Never skip to code.
 1. **Plan** — `/plan <task>` writes a plan doc in `docs/plans/`. No feature code before a plan exists.
