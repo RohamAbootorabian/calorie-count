@@ -70,3 +70,41 @@ For "where to pick up next", see [sessions/HANDOFF.md](sessions/HANDOFF.md).
   Database; not displayable, only resettable). Pass via `SUPABASE_DB_PASSWORD` env var.
 - The full two-user RLS proof is deferred to the Auth feature (needs real users);
   anon default-deny is already verified.
+
+---
+
+## 2026-06-19 — Step 2 done: design system `src/shared/ui` (plan 0002)
+
+**What we did**
+- Wrote → multi-agent-reviewed → executed **plan 0002** (design system). Reuse
+  over replace: kept the template's `theme.ts`/`useTheme`/`ThemedText`/`ThemedView`
+  as the foundation, **added** semantic tokens (`primary`/`primaryText`/`border`/
+  `danger`, green brand confirmed by the user) + a `Radius` scale, and built a thin
+  `src/shared/ui/` layer: **Button**, **Card**, **Input**, **Screen**, **Text**,
+  exposed via one barrel `@/shared/ui`. No new deps, no schema impact.
+
+**Key decisions & why (review caught real bugs before any code)**
+- **`useTheme` was silently broken:** it guarded `'unspecified'` but
+  `useColorScheme()` can return `null`/`'unspecified'`; the whole "theme-aware"
+  goal rested on it. Fixed to `scheme === 'dark' ? 'dark' : 'light'`.
+- **Keyboard avoidance baked into `Screen`:** auth/onboarding (next module) has
+  inputs low on the page; `Screen` now wraps `KeyboardAvoidingView` so every form
+  inherits it instead of re-solving inconsistently.
+- **Tab inset is opt-in (`tabBarInset`, default false):** auth/onboarding live
+  *outside* the tab navigator — always applying `BottomTabInset` gave 50–80px of
+  phantom dead space.
+- **Button trimmed** to 3 variants (deferred destructive/size/leftIcon) + an
+  in-flight double-tap guard (prevents double sign-in/save) + fixed spinner slot.
+- **Input sensitive-field hygiene:** secure fields default autocorrect/autocaps/
+  spellcheck OFF, forward `textContentType`/`autoComplete`, web `-webkit-autofill`
+  override; never logs its value; a11y from `label` only. React-19 ref-as-prop.
+
+**Gotchas for future sessions**
+- `expo lint` had never run — this session set it up (`eslint.config.js` + eslint
+  deps). The one pre-existing template error (`set-state-in-effect` hydration in
+  `use-color-scheme.web.ts`) is suppressed with a scoped disable; new code is clean.
+- **Visual Expo Go check is still pending** — typecheck + lint are green but no
+  primitive has been rendered on a device yet. Do a quick visual pass when S1's
+  first auth screen consumes `@/shared/ui` (no throwaway gallery was shipped).
+- `components/themed-*` stay the canonical typography impls; `shared/ui` is the
+  public surface — don't duplicate them.

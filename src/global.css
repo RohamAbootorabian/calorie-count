@@ -7,3 +7,15 @@
   --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
   --font-serif: Georgia, 'Times New Roman', serif;
 }
+
+/*
+ * Stop the browser's autofill from forcing its own (usually bright) background
+ * and text color on themed Inputs. Keeps password-manager fills readable in
+ * dark mode on react-native-web.
+ */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-background-clip: text;
+  transition: background-color 9999s ease-in-out 0s;
+}
