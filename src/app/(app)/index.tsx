@@ -8,6 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useAuth } from '@/lib/auth';
+import { Button } from '@/shared/ui';
 
 function getDevMenuHint() {
   if (Platform.OS === 'web') {
@@ -29,6 +31,9 @@ function getDevMenuHint() {
 }
 
 export default function HomeScreen() {
+  // TEMP: sign-out button to exercise the auth gate. Remove when S1 ships Settings.
+  const { signOut } = useAuth();
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
@@ -37,6 +42,9 @@ export default function HomeScreen() {
           <ThemedText type="title" style={styles.title}>
             Welcome to&nbsp;Expo
           </ThemedText>
+          <Button variant="secondary" onPress={signOut}>
+            Sign out (dev)
+          </Button>
         </ThemedView>
 
         <ThemedText type="code" style={styles.code}>

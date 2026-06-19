@@ -142,3 +142,43 @@ For "where to pick up next", see [sessions/HANDOFF.md](sessions/HANDOFF.md).
   code (non-negotiable workflow).
 - Route restructure moves `src/app/index.tsx`/`explore.tsx` into `src/app/(app)/`;
   `typedRoutes` will regenerate — expect a brief type churn on first `expo start`.
+
+---
+
+## 2026-06-19 (session 3) — Step 3 shipped: navigation skeleton + auth provider
+
+**What we did**
+- Ran `/review-plan` on plan 0003 (4-lens multi-agent). Fact-checked the findings:
+  dismissed 3 false alarms (complementary `Stack.Protected` guards can't both be
+  false; `__DEV__` is compiled out by Metro, not shipped; the splash overlay sits
+  *above* the native splash so there's no gap), resolved **1 real blocker** (temp
+  form must not `signUp` against the single prod Supabase project) + 6 should-fixes,
+  all folded back into the plan. Then **executed Step 3** with no deviations.
+- Built `src/lib/auth/` (trunk): `AuthProvider` over the existing `supabase`
+  singleton, `useAuth`/`useUser`, `signOut`; importable as `@/lib/auth`.
+- Restructured routes into `(app)`/`(auth)` groups (`git mv`, history kept),
+  rewrote root `_layout.tsx` with the `Stack.Protected` auth gate + brand-synced
+  nav `ThemeProvider` + native-splash control. Added an `(auth)/sign-in` placeholder
+  with a `__DEV__`-only temp sign-in to make the gate testable.
+- Fixed the duplicated `null`-scheme bug in both `app-tabs` files via `useTheme()`.
+
+**Key decisions & why**
+- **`getSession()` wrapped in try/catch** so a corrupt AsyncStorage session can't
+  hang the splash forever — always resolves `loading=false`. No artificial network
+  timeout: `getSession()` is a local read, not a network call.
+- **Token hygiene**: the provider never logs the `session` object (holds
+  access/refresh tokens) — only `user.id` if needed.
+- **`signInWithPassword`-only** in the temp form (no `signUp`) — the client points
+  at the prod project, so test users are created manually in the dashboard.
+- **`sign-in` pinned as the `(auth)` anchor** so the protected-redirect target is
+  deterministic; S1 must keep the route name.
+
+**Gotchas for next session**
+- **Device/Expo Go verification is still pending** — tsc + lint are green but the
+  gate hasn't been exercised on a device. Needs a test user in the Supabase
+  dashboard. This run also carries plan 0002's deferred visual check (the temp
+  sign-in screen now consumes `Screen`/`Text`/`Input`/`Button`).
+- The temp `__DEV__` sign-in + the Home "Sign out (dev)" button are **throwaway** —
+  S1 removes them when the real `src/features/auth/` screens land.
+- Route groups regenerate `typedRoutes`; expect brief type churn on first
+  `expo start` (tsc already passes against the current generated types).
