@@ -206,3 +206,12 @@ For "where to pick up next", see [sessions/HANDOFF.md](sessions/HANDOFF.md).
   + Expo Go.
 - Cleanup: a throwaway unconfirmed user `calorie.counter.s3test@gmail.com` exists
   in prod — delete or confirm.
+
+## 2026-06-19 (session 3 wrap)
+Session ended after shipping Step 3 + the web SSR fix (both pushed). Attempted
+live device testing: web signed-out gate verified via headless Chrome; **Expo Go
+phone testing deferred** — tunnel mode failed (ngrok "remote gone away" in this
+env) and LAN QR wouldn't scan on the iPhone. Signed-in flip still blocked on a
+confirmed Supabase user. Dev servers stopped, temp QR files cleaned up. Tree clean,
+tsc + lint green. Next session picks up the deferred sign-in/persist/sign-out
+verification once a confirmed test user exists.
