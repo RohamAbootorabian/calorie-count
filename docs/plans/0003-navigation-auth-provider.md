@@ -1,6 +1,6 @@
 # Plan: Navigation skeleton + auth provider (Phase A — Step 3)
 
-- **Status**: Done (2026-06-19) — executed per the approved plan; tsc + lint clean. Device verification pending (see Execution log).
+- **Status**: Done (2026-06-19) — executed per the approved plan; tsc + lint clean. Auth gate verified on web (signed-out → sign-in, sign-in → tabs, persist on reload, sign-out → back) with a confirmed Supabase test user.
 - **Created**: 2026-06-19
 - **Plan #**: 0003
 

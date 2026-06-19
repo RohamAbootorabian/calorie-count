@@ -31,7 +31,8 @@ function getDevMenuHint() {
 }
 
 export default function HomeScreen() {
-  // TEMP: sign-out button to exercise the auth gate. Remove when S1 ships Settings.
+  // Interim sign-out: the only way out until S1 piece 3 ships Settings, which will
+  // move this control there (plan 0004 SF4/N4).
   const { signOut } = useAuth();
 
   return (
@@ -43,7 +44,7 @@ export default function HomeScreen() {
             Welcome to&nbsp;Expo
           </ThemedText>
           <Button variant="secondary" onPress={signOut}>
-            Sign out (dev)
+            Sign out
           </Button>
         </ThemedView>
 

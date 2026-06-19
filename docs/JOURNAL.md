@@ -215,3 +215,50 @@ env) and LAN QR wouldn't scan on the iPhone. Signed-in flip still blocked on a
 confirmed Supabase user. Dev servers stopped, temp QR files cleaned up. Tree clean,
 tsc + lint green. Next session picks up the deferred sign-in/persist/sign-out
 verification once a confirmed test user exists.
+
+---
+
+## 2026-06-19 (session 4) — Step 3 closed + S1 piece 1 shipped: auth screens (plan 0004)
+
+**What we did**
+- **Closed Step 3:** the signed-in flip (sign-in → tabs → persist → sign-out) was
+  verified on web with a confirmed Supabase test user — the last unproven part of
+  Phase A. Phase A (the trunk) is now complete.
+- Wrote → **multi-agent-reviewed** → executed **plan 0004 — auth screens** (S1
+  piece 1). Built real sign-in / sign-up / forgot-password screens in
+  `src/features/auth/` on `@/shared/ui`, wired through the existing `src/lib/auth`
+  provider; replaced the temp `__DEV__` sign-in and renamed Home's `Sign out (dev)`
+  → `Sign out` (interim until piece 3 Settings). One `auth-utils.ts` holds pure
+  validators + a privacy-safe error mapper.
+
+**Key decisions & why (review caught real issues before code)**
+- **Anti-enumeration (B1):** never inspect the `signUp` response to detect an
+  already-registered email (Supabase deliberately obfuscates it). Always show the
+  same "check your email" state *with* an "Already have an account? Sign in" link so
+  an existing user is never trapped.
+- **Deep-link completion deferred (B2):** confirm + reset complete on Supabase's
+  hosted pages in v1; the in-app set-new-password/confirm deep-link is **plan 0005**
+  (both flows share the same `expo-linking` plumbing — wire once).
+- **Email confirmation stays ON** (user decision) — safer for a health-data app.
+- **Dismissed a false alarm:** two reviewers flagged `config.toml`
+  `enable_confirmations = false` as contradicting the plan; `config.toml` is
+  local-only, the client points at prod (confirmation ON), so the plan held.
+- Mounted-ref guards on every post-`await` setState (the gate unmounts the screen
+  on sign-in success); input errors clear on change; friendly errors have a generic
+  fallback and never echo raw messages/tokens.
+
+**Verification**
+- `tsc` + `lint` clean; web bundle compiles clean; SPA boots HTTP 200.
+- Verified on web: sign-in + persist + sign-out, wrong-password error, and
+  email/password/confirm validation.
+- **Not yet end-to-end:** signup-confirm + password-reset *emails* — blocked by
+  Supabase's default email service (~2/hr cap), which surfaced as a correctly
+  handled `over_email_send_rate_limit`. Infra, not code.
+
+**Gotchas for future sessions**
+- **Custom SMTP is required** before signup/reset can be tested at any volume (and
+  for production) — Supabase's built-in email sender is rate-capped for testing
+  only. Configure in Auth → Emails → SMTP, then re-verify the email flows.
+- Adding routes regenerates `typedRoutes`; the first `tsc` after a new route file
+  fails until `expo start` rebuilds `.expo/types/router.d.ts` (expected churn).
+- Home's `Sign out` button is interim — piece 3 (Settings) moves it.
