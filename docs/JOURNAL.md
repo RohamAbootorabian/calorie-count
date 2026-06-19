@@ -108,3 +108,37 @@ For "where to pick up next", see [sessions/HANDOFF.md](sessions/HANDOFF.md).
   first auth screen consumes `@/shared/ui` (no throwaway gallery was shipped).
 - `components/themed-*` stay the canonical typography impls; `shared/ui` is the
   public surface — don't duplicate them.
+
+---
+
+## 2026-06-19 (session 2 wrap) — Step 3 planned (plan 0003)
+
+**What we did**
+- Shipped **Step 2** earlier this session (design system — see the entry above;
+  committed + pushed).
+- Wrote **plan 0003 — Navigation skeleton + auth provider** (Phase A, Step 3). Not
+  yet reviewed or executed. Grounded the auth-gate design in the **Expo SDK 56
+  docs**: the idiomatic pattern is `Stack.Protected guard={…}` with a
+  `SessionProvider` at the root + `(app)`/`(auth)` route groups.
+- **Decided to stop before executing Step 3** to start it with a fresh context —
+  the route restructure + provider + multi-agent review is a large chunk and the
+  session was past ~60% context.
+
+**Key decisions & why**
+- **Auth provider/hook live in the trunk (`src/lib/auth/`), not in a feature.** The
+  gate, provider, and `useUser` are shared infrastructure; S1 only builds the auth
+  *screens* on top. Keeps the boundary clean (matches ARCHITECTURE.md).
+- **`Stack.Protected` over manual redirects.** Declarative guard is the SDK-53+
+  recommended pattern and avoids race-y `useRouter().replace` effects.
+- **Temp `__DEV__` sign-in only.** To make the gate testable without building S1's
+  screens, plan 0003 ships a throwaway `__DEV__`-gated sign-in on the `(auth)`
+  placeholder — explicitly removed when S1 lands.
+- Plan also folds in the **deferred review item from 0002** (sync expo-router
+  ThemeProvider to the green brand) and fixes the **same `null`-scheme color bug**
+  still present in both `app-tabs` files.
+
+**Gotchas for next session**
+- Plan 0003 is **Draft** — must run `/review-plan` and resolve blockers BEFORE any
+  code (non-negotiable workflow).
+- Route restructure moves `src/app/index.tsx`/`explore.tsx` into `src/app/(app)/`;
+  `typedRoutes` will regenerate — expect a brief type churn on first `expo start`.
