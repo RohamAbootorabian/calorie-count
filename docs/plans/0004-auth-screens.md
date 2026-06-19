@@ -98,7 +98,7 @@ confirmation** and **password reset** are **completed on Supabase's hosted pages
 in v1: the user taps the emailed link, finishes on Supabase's page, then returns to
 the app and signs in. Screen copy sets this expectation ("Tap the link in your email
 to finish, then come back and sign in"). The in-app deep-link callback
-(set-new-password + in-app confirm) is **deferred to plan 0005**, because both flows
+(set-new-password + in-app confirm) is **deferred to a future deep-link plan**, because both flows
 need the same `expo-linking` plumbing — wiring it once is cheaper than twice.
 **This is only acceptable if the hosted link resolves**, so the test plan must
 actually click an emailed link and confirm it lands on a working page (not a dead
@@ -210,10 +210,10 @@ auth screens rely on it and never write `profiles`/`goals` directly.
 
 _Resolved during review:_
 - **(was Q2) Password-reset completion** — RESOLVED: request-only in v1; in-app
-  set-new-password + deep-link confirm bundled into **plan 0005**. Completion via
+  set-new-password + deep-link confirm bundled into a future deep-link plan. Completion via
   Supabase hosted page meanwhile (B2).
 - **(was Q3) `redirectTo`** — RESOLVED: rely on Supabase's hosted pages + a valid
-  Site URL in v1 (verified in test plan); app-scheme deep links land in plan 0005.
+  Site URL in v1 (verified in test plan); app-scheme deep links land in a future deep-link plan.
 - **(was Q4) Password min length** — RESOLVED: **6**, matching `config.toml`; mirror
   in `auth-utils` (N6).
 
@@ -252,7 +252,7 @@ _Multi-agent review (4 lenses), 2026-06-19. Findings consolidated & deduped._
   sign in. That's acceptable for v1 **only if** the hosted link actually resolves
   (sane Site URL / default `redirectTo`).
   **Resolution:** State explicitly that confirm + reset **complete on Supabase's
-  hosted pages in v1** (in-app deep-link callback = follow-up plan 0005); set
+  hosted pages in v1** (in-app deep-link callback = a future follow-up plan); set
   copy expectations ("tap the link in your email to finish"); and add a verify step
   that actually clicks the emailed link and confirms it lands on a working page,
   not a dead end. (Folded into approach, edge cases, test plan, rollout.)
@@ -335,5 +335,4 @@ work, no token/PII logging, and a thorough edge-case list. Boundary discipline
   Supabase's default email service caps ~2/hr, so the confirm + reset *emails*
   couldn't be sent during testing. **This is infra, not a code defect.** Re-verify
   signup-confirm + reset once a custom SMTP provider is configured (needed for prod
-  anyway) or the rate limit resets. Tracked as a follow-up alongside plan 0005
-  (deep-link completion).
+  anyway) or the rate limit resets. Tracked as a follow-up alongside the future deep-link plan.

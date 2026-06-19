@@ -262,3 +262,40 @@ verification once a confirmed test user exists.
 - Adding routes regenerates `typedRoutes`; the first `tsc` after a new route file
   fails until `expo start` rebuilds `.expo/types/router.d.ts` (expected churn).
 - Home's `Sign out` button is interim — piece 3 (Settings) moves it.
+
+---
+
+## 2026-06-19 (session 4 cont.) — Plan 0005 drafted + reviewed: onboarding + TDEE
+
+**What we did**
+- Wrote and **multi-agent-reviewed plan 0005 — onboarding wizard + TDEE** (S1 piece
+  2). Status: **Approved, not yet executed.** 5 blockers resolved in-plan, all 5
+  open questions decided.
+- De-pinned the "plan 0005" forward-references in plan 0004 (the deep-link follow-up
+  is now "a future deep-link plan" — 0005 is onboarding).
+
+**Key decisions & why (review caught real issues before any code)**
+- **Schema:** the `goals` table only stores *computed* targets — neither it nor
+  `profiles` has age/sex/height/weight. **Decided: add the four raw inputs to
+  `goals`** (they're the inputs that produced the targets; `goals` is 1-row/user;
+  `profiles` stays identity/prefs). Migration uses **NaN-safe bounded `between`
+  checks** (the plan-0001 lesson: Postgres `NaN >= 0` is true). No RLS change; no
+  `DEFAULT auth.uid()` on `goals.user_id` (client supplies it; WITH CHECK is the
+  boundary).
+- **Routing gate:** extend the **trunk root gate** with a third `(onboarding)` route
+  group + three complementary `Stack.Protected` guards (NOT a `<Redirect>` from
+  inside `(app)`, which both crossed the trunk boundary and risked a tabs↔onboarding
+  flash/loop). `useOnboardingStatus()` returns `{loading, needsOnboarding, error,
+  refetch}`; loading→null, error→Retry, post-save→refetch.
+- **TDEE math (pure `tdee.ts`):** Mifflin–St Jeor + activity multiplier; **clamp
+  calories to a 1200 floor BEFORE computing macros**; carbs = remainder (floored ≥0)
+  so `4P+9F+4C ≈ kcal` survives rounding. Guards throw on NaN/≤0.
+- **Metric-only inputs for v1** (storage is always metric anyway; imperial display
+  defers to piece 3 with units editing) — shrinks the piece with zero rework.
+- **No test runner exists** → verify `tdee.ts` with a one-off `npx tsx` script of
+  hand-computed reference cases rather than adding a framework now.
+
+**Gotchas for next session**
+- Executing 0005 touches the **prod DB** (migration needs `SUPABASE_DB_PASSWORD`) +
+  regenerates `database.ts` — a heavier, multi-part change. Start it fresh.
+- We stopped before executing 0005 deliberately (session was ~70% context).
