@@ -1,33 +1,44 @@
 # Handoff → Next Session
 
-_Last updated: 2026-06-14_
+_Last updated: 2026-06-19_
 
 ## Where we are
-The project foundation is built and pushed to GitHub (`main`). Stack: Expo (RN) +
-TypeScript + Supabase + Claude vision. The full development workflow + docs system
-is now in place. **No feature code yet** beyond the Expo scaffold.
+**Step 1 of the build is DONE: the database schema + RLS is live on Supabase.**
+Tables `profiles`, `goals`, `meal_logs`, `meal_items` exist on the linked project
+`vldpfoczswakghkrkyrm`, RLS is active (anon default-deny verified), the private
+`meal-photos` bucket exists, and `src/types/database.ts` is generated. Tree
+typechecks clean. We build **sequentially in one session** now (the parallel-session
+idea was dropped) — commit straight to `main`.
 
 ## What changed this session
-- Installed toolchain (Node via nvm), scaffolded Expo SDK 56 app, connected GitHub via SSH.
-- Added the architecture foundation: `src/types/nutrition.ts` (domain model),
-  `src/lib/supabase.ts` + `src/lib/env.ts`, `src/services/analyzeMeal.ts`.
-- Established the dev workflow (plan → multi-agent review → execute) and the docs
-  system (journal, decisions, plans, handoffs) + the four slash commands.
+- Locked **Gemini 2.5 Flash** as the vision model (cheap + strong); fixed CLAUDE.md.
+- Added the **session-health footer** rule and the `MODULES.md` / `ARCHITECTURE.md`
+  roadmap docs (kept as the feature map even though parallel sessions were dropped).
+- Wrote → multi-agent-reviewed → executed **plan 0001** (schema + RLS). Review caught
+  real bugs first (RLS `WITH CHECK`, trigger `search_path`, dropped `quality_factors`,
+  NaN guard). Migration pushed and verified live.
 
 ## Next steps (pick up here)
-1. **Connect Supabase.** The user has a project. Create `.env` from `.env.example`
-   and fill `EXPO_PUBLIC_SUPABASE_URL` + `EXPO_PUBLIC_SUPABASE_ANON_KEY` (from
-   Supabase → Settings → API).
-2. **Set up the Supabase CLI** so we can deploy schema + functions:
-   `npx supabase login`, `npx supabase init`, then `npx supabase link`.
-3. **First feature, via the workflow:** run `/plan` for the `analyze-meal` Edge
-   Function (photo → Claude vision → `MealAnalysis` JSON) — the core product risk,
-   worth proving first. Then `/review-plan`, then execute.
+We are inside **Phase A (the trunk)**. Remaining trunk pieces, then features:
+1. **Step 2 — Design system** (`src/shared/ui/`): theme + base components
+   (Button, Card, Input, Screen). Run `/plan design system` → `/review-plan` → build.
+2. **Step 3 — Navigation + auth provider** (`src/app/` tabs/stack with an auth gate;
+   auth session provider + `useUser` hook in `src/lib/auth`).
+3. **Step 4 — Auth & Onboarding feature** (`src/features/auth/`): signup/login +
+   goals/TDEE wizard → writes `profiles`/`goals`. (Brief: `docs/sessions/briefs/S1-auth-onboarding.md`.)
+Then capture+AI, diary, trends (see `docs/ARCHITECTURE.md`).
 
 ## Open questions / risks
-- **Photo→nutrition accuracy** is the central product risk — build a quick eval early.
-- Need a **privacy stance** for health data + photos before any store submission.
+- **Full two-user RLS proof is still pending** — only anon default-deny is verified.
+  Exercise per-user isolation once signup exists (Step 4).
+- **Photo→nutrition accuracy** (Gemini) is the core product risk — build a small eval
+  when we do the `analyze-meal` Edge Function.
+- Privacy policy needed before any store submission (health data).
 
 ## How to resume
-Run `/session-start`. Node is via nvm — if `node`/`npm` aren't found, run
-`source ~/.zshrc` first. Work from `/Users/roham_abt/Desktop/calorie count` (quote the space).
+Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`.
+Work from `/Users/roham_abt/Desktop/calorie count` (quote the space).
+**DB ops** (`supabase db push` / `gen types`) need the database password via the
+`SUPABASE_DB_PASSWORD` env var — ask the user for it (it is NOT stored in the repo,
+and may have been rotated since last session). Get it / reset it at Supabase →
+Settings → Database.
