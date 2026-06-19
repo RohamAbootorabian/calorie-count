@@ -37,3 +37,36 @@ For "where to pick up next", see [sessions/HANDOFF.md](sessions/HANDOFF.md).
 **Gotchas for future sessions**
 - Project path has a space: `/Users/roham_abt/Desktop/calorie count` — always quote it.
 - Node is via nvm; if `node` is missing in a fresh shell, `source ~/.zshrc`.
+
+---
+
+## 2026-06-19 — Step 1 done: database schema + RLS (plan 0001)
+
+**What we did**
+- Chose **Gemini 2.5 Flash** as the vision model (≈7–35× cheaper than Claude for
+  this workload, strong vision, free dev tier). Updated CLAUDE.md's stack line.
+- Set up the parallel-work docs (`MODULES.md`, `ARCHITECTURE.md`, an S1 brief) then
+  **dropped the parallel-session approach** — we build sequentially in one session,
+  back to commit-straight-to-`main`. Those docs remain as the feature roadmap.
+- Added the **session-health footer** rule to CLAUDE.md.
+- Wrote, **multi-agent-reviewed**, and executed **plan 0001** (schema + RLS):
+  - 4 tables (`profiles`, `goals`, `meal_logs`, `meal_items`) mirroring
+    `src/types/nutrition.ts`, a private `meal-photos` bucket, triggers, and
+    per-verb RLS — pushed to the linked Supabase project and verified live.
+  - Generated `src/types/database.ts`.
+
+**Key decisions & why**
+- **Review caught real bugs before any SQL:** missing `WITH CHECK` on RLS writes
+  (cross-user write hole), unpinned `search_path` on the SECURITY DEFINER trigger,
+  a dropped `quality_factors` column, and a storage-path id-ordering problem. All
+  fixed in the revised plan.
+- **NaN guard:** Postgres `numeric` treats `NaN = NaN` as TRUE and `NaN > all`, so
+  `>= 0` alone accepts NaN. Used bounded ranges (`between 0 and MAX`) instead.
+- **Bucket via SQL, not config.toml:** `db push` deploys SQL to the remote; a
+  config.toml bucket only affects local `supabase start`.
+
+**Gotchas for future sessions**
+- `supabase db push` / `gen types` need the **DB password** (Supabase → Settings →
+  Database; not displayable, only resettable). Pass via `SUPABASE_DB_PASSWORD` env var.
+- The full two-user RLS proof is deferred to the Auth feature (needs real users);
+  anon default-deny is already verified.

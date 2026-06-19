@@ -181,4 +181,22 @@ Multi-agent review (correctness, architecture, edge-cases, data/privacy) — 202
   `CLAUDE.md` provider line.
 
 ## Execution log
-<!-- Filled during execution. -->
+**2026-06-19 — Executed. Status: DONE.**
+- Wrote `supabase/migrations/20260619102510_initial_schema.sql` (all tables,
+  triggers, per-verb RLS, storage bucket + policies).
+- `supabase db push` applied it to the linked project `vldpfoczswakghkrkyrm`
+  (`migration list` shows local == remote).
+- **Deviation from plan:** the `meal-photos` bucket is created via SQL
+  (`insert into storage.buckets ... on conflict do nothing`) rather than declared
+  in `config.toml`, because `db push` deploys SQL to the *remote* project but a
+  `config.toml` bucket only applies to local `supabase start`. Noted inline.
+- **NaN guard correction:** the planned `col = col` trick does NOT reject NaN for
+  Postgres `numeric` (NaN = NaN is TRUE there). Switched every numeric column to a
+  bounded range (`between 0 and MAX`), which rejects NaN (NaN > all non-NaN ⇒ fails
+  the upper bound) and also caps absurd values.
+- Generated `src/types/database.ts` via `supabase gen types typescript --linked`.
+- **Verified:** all four tables exist on the remote and RLS is active (anon select
+  returns no rows, no "missing table" error); `npx tsc --noEmit` clean.
+- **Not yet done (deferred to the Auth feature, when real users exist):** the full
+  two-user cross-write RLS proof (steps 2–3 of the test plan). Default-deny for the
+  anon role is confirmed; per-user isolation will be exercised once signup works.
