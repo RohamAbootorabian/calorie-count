@@ -182,3 +182,27 @@ For "where to pick up next", see [sessions/HANDOFF.md](sessions/HANDOFF.md).
   S1 removes them when the real `src/features/auth/` screens land.
 - Route groups regenerate `typedRoutes`; expect brief type churn on first
   `expo start` (tsc already passes against the current generated types).
+
+## 2026-06-19 (session 3 cont.) — Step 3 web verification + SSR fix
+
+**What we did**
+- Tested the auth gate on web and **found a real bug**: with Expo's default
+  `web.output: "static"` (Node SSR of the route tree), wiring `AuthProvider` into
+  the root layout pulls the `supabase` client into SSR; it auto-inits AsyncStorage
+  (web → `window.localStorage`) and crashes `ReferenceError: window is not defined`,
+  killing the dev server.
+- **Fix (deviation from plan):** `app.json` `web.output` `static` → `single` (SPA,
+  client-only render). Idiomatic for a mobile-first app behind a login gate; native
+  unaffected. Re-verified: clean boot (`Web Bundled` 1357 modules, HTTP 200, no
+  runtime errors), and headless-Chrome render confirms the signed-out gate shows
+  `(auth)/sign-in` (brand-green primitives) with no Home content. Also cleared
+  plan 0002's deferred visual check.
+
+**Blocked / next**
+- **Signed-in flip not yet tested** — the Supabase project requires email
+  confirmation, so a script-`signUp` user returns `email_not_confirmed` (no
+  service-role key/inbox to confirm). Need a dashboard auto-confirmed user (or
+  toggle off "Confirm email"), then test sign-in→tabs / persist / sign-out on web
+  + Expo Go.
+- Cleanup: a throwaway unconfirmed user `calorie.counter.s3test@gmail.com` exists
+  in prod — delete or confirm.

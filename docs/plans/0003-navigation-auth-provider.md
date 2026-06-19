@@ -369,7 +369,30 @@ Built exactly as specified after the review fixes:
 `Stack.Protected`, `ThemeProvider`, `DefaultTheme`, `DarkTheme`;
 `expo-splash-screen@56.0.10` present.
 
-**Still pending — device/Expo Go verification** (carries the plan's manual test
-steps + plan 0002's deferred visual check, since `sign-in.tsx` now consumes
-`Screen`/`Text`/`Input`/`Button`). Requires a test user created in the Supabase
-dashboard. Not yet run on a device.
+**DEVIATION (2026-06-19) — `app.json` `web.output` `static` → `single`.**
+The plan said "no `app.json` changes". On `expo start --web`, the default
+`output: "static"` server-renders the route tree in Node; wiring `AuthProvider`
+into the root layout pulls the `supabase` client into SSR, which auto-initializes
+its AsyncStorage (web → `window.localStorage`) and crashes with
+`ReferenceError: window is not defined`, killing the dev server. Switched web to
+SPA mode (`output: "single"`, client-only render) — the idiomatic Expo setting for
+a mobile-first app behind a login gate (no SEO/SSR need). Native (iOS/Android) is
+unaffected (`web.output` is web-only). One-line change; re-verified below.
+
+**Web verification (DONE):** after the fix, `expo start --web` boots clean
+(`Web Bundled … 1357 modules`, HTTP 200, no runtime errors in the Metro log).
+Drove headless Chrome against `http://localhost:8081/`: signed-out launch renders
+the `(auth)/sign-in` placeholder (title "Calorie Counter", "Sign in to continue",
+Email/Password inputs, full-width brand-green "Sign in" button) and **no** Home
+("Welcome to Expo") content — the gate correctly holds the signed-out branch. This
+also clears **plan 0002's deferred visual check** (the screen renders
+`Screen`/`Text`/`Input`/`Button` correctly, brand green visible).
+
+**Still pending — signed-in flip + native (Expo Go) verification.** Blocked on a
+**confirmed** Supabase user: the project requires email confirmation, so a
+script-created `signUp` user returns `email_not_confirmed` at login (no
+service-role key / inbox access to confirm it). Needs a dashboard-created
+auto-confirmed user (or temporarily disabling "Confirm email"). Then verify on web
++ phone: sign-in flips to `(app)` tabs, restart persists, sign-out flips back.
+NOTE: a throwaway unconfirmed user `calorie.counter.s3test@gmail.com` was created
+in the prod project during testing — delete or confirm it.
