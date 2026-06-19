@@ -4,7 +4,7 @@
 
 Snap a meal photo → calories, macros (protein/carbs/fat), quality nutrients
 (sugar, salt, fiber), and a **food-quality score**. Stack: Expo (React Native) +
-TypeScript + Supabase + Claude vision. See [README.md](README.md) for the
+TypeScript + Supabase + Gemini 2.5 Flash (vision). See [README.md](README.md) for the
 product overview and [docs/WORKFLOW.md](docs/WORKFLOW.md) for how we work.
 
 ## Start every session
@@ -42,7 +42,7 @@ Every feature or task — however small — goes through this pipeline. Never sk
 - End every commit message with: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
 
 ## Architecture rules
-- The phone **NEVER** calls the AI provider directly. Photo → Supabase Edge Function → Claude → structured `MealAnalysis` → phone. AI keys live ONLY in Edge Function secrets.
+- The phone **NEVER** calls the AI provider directly. Photo → Supabase Edge Function → Gemini 2.5 Flash → structured `MealAnalysis` → phone. AI keys live ONLY in Edge Function secrets.
 - [src/types/nutrition.ts](src/types/nutrition.ts) is the single source of truth for the meal data model. Schema and UI derive from it.
 - Public env only in `.env` (`EXPO_PUBLIC_*`). Real secrets are never committed.
 
