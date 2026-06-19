@@ -42,36 +42,48 @@ export type Database = {
       goals: {
         Row: {
           activity_level: string
+          age: number | null
           calories: number
           carbs: number
           created_at: string
           fat: number
+          height_cm: number | null
           protein: number
+          sex: string | null
           updated_at: string
           user_id: string
           weight_goal: string
+          weight_kg: number | null
         }
         Insert: {
           activity_level: string
+          age?: number | null
           calories: number
           carbs: number
           created_at?: string
           fat: number
+          height_cm?: number | null
           protein: number
+          sex?: string | null
           updated_at?: string
           user_id: string
           weight_goal: string
+          weight_kg?: number | null
         }
         Update: {
           activity_level?: string
+          age?: number | null
           calories?: number
           carbs?: number
           created_at?: string
           fat?: number
+          height_cm?: number | null
           protein?: number
+          sex?: string | null
           updated_at?: string
           user_id?: string
           weight_goal?: string
+          weight_kg?: number | null
         }
         Relationships: []
       }

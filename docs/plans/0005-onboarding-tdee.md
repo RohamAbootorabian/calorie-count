@@ -1,8 +1,10 @@
 # Plan: Onboarding wizard + TDEE → goals (S1 · piece 2)
 
-- **Status**: Approved (2026-06-19) — multi-agent review passed; 5 blockers resolved
-  in-plan; all 5 open questions decided (raw inputs → `goals`; metric-only v1; macro
-  split + 1200 floor confirmed; no test framework).
+- **Status**: Done (2026-06-19) — executed, verified (tsc/lint/web bundle + tdee
+  reference checks green; manual web walkthrough confirmed by user), shipped to `main`.
+  Approved 2026-06-19 — multi-agent review passed; 5 blockers resolved in-plan; all 5
+  open questions decided (raw inputs → `goals`; metric-only v1; macro split + 1200
+  floor confirmed; no test framework).
 - **Created**: 2026-06-19
 - **Plan #**: 0005
 
@@ -319,5 +321,44 @@ Storing normalized metric regardless of display units is the right call. Edge-ca
 list (loading, offline, sign-out mid-wizard, double-tap) is mature.
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+_Executed 2026-06-19 (session 5)._
+
+**Built (in plan order):**
+- Migration `supabase/migrations/20260619192848_goals_body_inputs.sql` — the four
+  bounded columns (B4 SQL verbatim). Applied to prod via `supabase db push`;
+  regenerated `src/types/database.ts` (age/sex/height_cm/weight_kg now `… | null`).
+- `src/features/auth/lib/tdee.ts` — pure `computeGoals(metricInput)`, strict B3 order
+  (BMR → TDEE → goal adj → clamp@1200 → round/10 → macros, carbs absorbs rounding),
+  guards throw on non-finite/≤0 in or out.
+- `scripts/check-tdee.ts` — one-off `npx tsx` reference checks (OQ5). 19 assertions,
+  all pass (case1 30M/180/80/mod/maintain → 2760 kcal / 144P / 77F / 372C; the 1200
+  floor fires + `clampedToMinimum` for a small user; macro-sum ≈ kcal; bad inputs throw).
+- `src/features/auth/lib/onboarding-form.ts` — metric input model, per-step validators
+  (bounds mirror the DB checks), `toMetricInput`, imperial→metric helper (N4, for piece 3).
+- `src/features/auth/lib/use-onboarding-status.tsx` — the goals-existence check.
+- `src/features/auth/screens/onboarding-wizard.tsx` — 5-step in-memory machine on
+  `@/shared/ui`; selection rows reuse `Button` (SF3); mounted-ref guard + idempotent
+  upsert (B5/SF6); Review shows targets + clamp note (N5).
+- `src/app/(onboarding)/{_layout,index}.tsx` + the third gate guard in
+  `src/app/_layout.tsx` (B1, three complementary `Stack.Protected` branches; loading→
+  null, signed-in+error→full-screen Retry).
+
+**Deviations from the plan (and why):**
+1. **`useOnboardingStatus` is a context (provider + hook), not a bare hook**, and the
+   file is **`.tsx`** (not `.ts`). The plan said the wizard calls
+   `useOnboardingStatus().refetch()` to flip the gate — but a per-component hook
+   instance in the wizard can't reach the gate's state. Sharing one instance via
+   `OnboardingStatusProvider` (wrapped in the root layout, inside `AuthProvider`) makes
+   the stated behavior actually work. Same contract `{ loading, needsOnboarding, error,
+   refetch }`; no API change for consumers.
+2. **Outcome is keyed to `(userId, reloadKey)`** instead of three loose `useState`s.
+   The lint rule `react-hooks/set-state-in-effect` forbids synchronous `setState` in an
+   effect body; the keyed-outcome shape moves all writes into the async callback AND, as
+   a bonus, makes a sign-out→sign-in-as-different-user read as "loading" (never the
+   previous user's answer) and makes Retry show a loading state, not the stale error.
+
+**Verification:** `npx tsx scripts/check-tdee.ts` → ALL PASS (19); `npx tsc --noEmit`
+→ 0; `npx expo lint` → clean; `npx expo export --platform web` → bundles clean (route
+group + provider compile). Manual web walkthrough (sign-in → onboarding → steps →
+validation blocks bad input → Review → Save → tabs → reload stays on tabs) **confirmed
+working by the user**.

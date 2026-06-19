@@ -299,3 +299,46 @@ verification once a confirmed test user exists.
 - Executing 0005 touches the **prod DB** (migration needs `SUPABASE_DB_PASSWORD`) +
   regenerates `database.ts` — a heavier, multi-part change. Start it fresh.
 - We stopped before executing 0005 deliberately (session was ~70% context).
+
+---
+
+## 2026-06-19 (session 5) — Executed plan 0005: onboarding wizard + TDEE (S1 piece 2)
+
+**What we did**
+Built and shipped the first-run onboarding wizard end to end. A signed-in user with
+no `goals` row is now routed into a 5-step wizard (About → Body → Activity → Goal →
+Review), which computes daily calorie + macro targets (Mifflin–St Jeor) and upserts
+the `goals` row; afterwards they go straight to the tabs. Migration applied to prod,
+types regenerated, verified (tsc/lint/web bundle + tdee reference checks), manual web
+walkthrough confirmed by the user. Plan 0005 → Done.
+
+**Key decisions & why**
+- **TDEE math is a pure module** (`tdee.ts`) with a strict order — clamp calories to a
+  1200 floor *before* macros, carbs absorbs all rounding — so `4P+9F+4C ≈ kcal` and
+  nothing goes negative/NaN. Verified with a one-off `npx tsx` reference script (19
+  assertions) rather than adding a test framework (OQ5).
+- **Raw body inputs live on `goals`** (age/sex/height_cm/weight_kg), nullable, bounded
+  `between` checks (NaN-safe, plan-0001 lesson). They're the inputs that produced the
+  targets, so piece 3 can recompute without re-asking. No RLS change; client supplies
+  `user_id` (no `DEFAULT auth.uid()` on `goals`).
+- **Three-state root gate** (B1): a third `(onboarding)` route group with three
+  complementary `Stack.Protected` guards in the trunk root layout. Loading → null
+  (splash); signed-in + goals-check error → full-screen Retry (never auto-route into
+  onboarding → no duplicate-row risk).
+
+**Deviations from the plan (logged in 0005's Execution log)**
+- `useOnboardingStatus` became a **context provider + hook** (file is `.tsx`), so the
+  wizard and the gate share ONE instance — that's the only way the wizard's `refetch()`
+  can flip the gate after Save (a per-component hook couldn't). Same contract.
+- The status outcome is **keyed to `(userId, reloadKey)`** instead of loose `useState`s.
+  Required to satisfy `react-hooks/set-state-in-effect` (no synchronous setState in an
+  effect body); as a bonus it makes user-switch read as loading (never a stale answer)
+  and Retry show loading rather than the stale error.
+
+**Gotchas for next session**
+- Selection controls (sex/activity/goal) are `Button` rows, not a new primitive (SF3) —
+  if piece 3 needs a real radio/segmented control, that's a deliberate later extraction.
+- `scripts/check-tdee.ts` is the de-facto test for the formula. Re-run it
+  (`npx tsx scripts/check-tdee.ts`) before tuning the macro split / multipliers.
+- The wizard is **metric-only** in v1; imperial display + units editing land in piece 3
+  (the `inchesToCm`/`poundsToKg` helpers in `onboarding-form.ts` are already there).
