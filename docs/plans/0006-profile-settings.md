@@ -1,8 +1,9 @@
 # Plan: Profile & Settings — edit profile + goals, move Sign out (S1 · piece 3)
 
-- **Status**: Approved (2026-06-19) — multi-agent review passed; 2 blockers resolved
-  in-plan (imperial state model + unit-aware validation); 8 should-fixes folded in; all
-  5 open questions decided.
+- **Status**: Done (2026-06-21) — executed & verified (tsc + lint + tdee check + web
+  bundle export all green). Approved (2026-06-19) after multi-agent review: 2 blockers
+  resolved in-plan (imperial state model + unit-aware validation); 8 should-fixes folded
+  in; all 5 open questions decided.
 - **Created**: 2026-06-19
 - **Plan #**: 0006
 
@@ -300,5 +301,31 @@ folded into Files/Approach/Edge sections. **Open product decisions (OQ1–OQ5) s
 the user** before this is Approved — see Open questions.
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+
+**2026-06-21 (session 7) — executed & shipped.** Built strictly in the planned order
+(reverse converters → use-profile + profile-form → settings-screen → route → both tab
+bars + icon → strip Home). Verification: `npx tsc --noEmit` clean, `npx expo lint` clean,
+`npx tsx scripts/check-tdee.ts` green (incl. new round-trip asserts), `npx expo export
+--platform web` bundled with no errors. Live behavioral web verification (login → edit →
+toggle → sign out) still pending a browser session.
+
+**Deviations from the plan (all same-contract, noted per WORKFLOW step 3):**
+- **B1 state model implemented as an "edit override", not a setState-in-effect deriver.**
+  The plan described holding canonical metric in state and re-deriving display strings on
+  load/toggle. The project's lint rules forbid both reading a ref during render and calling
+  setState synchronously in an effect, so instead: `canonicalBody` (metric) is the source of
+  truth; `heightEdit`/`weightEdit` are null until the user edits (null ⇒ the field DISPLAYS
+  `canonical→units` derived in render). Dirty = `edit !== null`. A unit toggle / successful
+  save resets the overrides to null so the display re-derives and an unedited value never
+  drifts. Identical B1 guarantee (no drift, dirty-tracking), cleaner and lint-clean.
+- **Added a local `useGoalsRow` hook inside settings-screen.tsx** (not in the planned file
+  list). The plan only specced `use-profile` (profile-only); the goals row still has to be
+  loaded somewhere. Kept it local to the single consumer, mirroring use-profile's
+  keyed-outcome + mounted/active guard pattern. No goals refetch needed — after save we
+  adopt the written metric as the new canonical locally.
+- **Profile save uses `upsert(onConflict:'id')` instead of bare `update`** so a missing
+  profile row self-heals (the plan's own edge case). Superset of the planned update.
+- **Extended `scripts/check-tdee.ts`** with metric⇄imperial round-trip asserts (optional
+  per the test plan) to lock the exact-inverse converter contract.
+- **Typed-routes churn** (expected, piece-1/2 lesson): the new `/profile` route required
+  regenerating `.expo/types/router.d.ts` (ran the dev server once) before tsc passed.

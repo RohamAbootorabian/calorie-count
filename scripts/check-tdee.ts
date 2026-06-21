@@ -8,6 +8,12 @@
  *
  * Exits non-zero on the first failed assertion so CI/local can gate on it.
  */
+import {
+  cmToInches,
+  inchesToCm,
+  kgToPounds,
+  poundsToKg,
+} from '../src/features/auth/lib/onboarding-form';
 import { computeGoals, MIN_CALORIES, type MetricInput } from '../src/features/auth/lib/tdee';
 
 let failures = 0;
@@ -102,6 +108,16 @@ expectThrow('age 0 throws', () => computeGoals({ ...base, age: 0 }));
 expectThrow('negative height throws', () => computeGoals({ ...base, heightCm: -1 }));
 expectThrow('NaN weight throws', () => computeGoals({ ...base, weightKg: Number.NaN }));
 expectThrow('Infinity height throws', () => computeGoals({ ...base, heightCm: Number.POSITIVE_INFINITY }));
+
+// --- Case 6: metric⇄imperial converters are exact inverses (plan 0006 B1) ----
+// The round-trip must not drift the canonical metric value (the whole point of
+// dirty-tracking): convert metric→display→metric and expect the original back.
+for (const cm of [50, 150, 180.5, 272]) {
+  checkApprox(`height round-trip ${cm}cm`, inchesToCm(cmToInches(cm)), cm, 1e-9);
+}
+for (const kg of [20, 45, 80.5, 500]) {
+  checkApprox(`weight round-trip ${kg}kg`, poundsToKg(kgToPounds(kg)), kg, 1e-9);
+}
 
 console.log(`\n${failures === 0 ? 'ALL PASS ✓' : `${failures} FAILURE(S) ✗`}`);
 process.exit(failures === 0 ? 0 : 1);

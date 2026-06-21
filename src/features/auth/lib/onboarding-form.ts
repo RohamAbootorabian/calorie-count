@@ -67,7 +67,7 @@ export const EMPTY_FORM: OnboardingForm = {
 };
 
 /** Parse a user-typed number, tolerating a locale comma; returns NaN if unusable. */
-function parseNumber(raw: string): number {
+export function parseNumber(raw: string): number {
   const normalized = raw.trim().replace(',', '.');
   if (!normalized) return Number.NaN;
   return Number(normalized);
@@ -162,4 +162,109 @@ export function inchesToCm(inches: number): number {
 
 export function poundsToKg(pounds: number): number {
   return pounds * 0.45359237;
+}
+
+/**
+ * Metric→imperial reverse converters (plan 0006 B1) — EXACT inverses of the
+ * forward helpers above (no internal rounding; the UI rounds at the display
+ * edge). Storage stays canonical metric; these exist only to DISPLAY a stored
+ * value in imperial. Because they're exact inverses, a value never drifts unless
+ * the user actually edits the field.
+ */
+export function cmToInches(cm: number): number {
+  return cm / 2.54;
+}
+
+export function kgToPounds(kg: number): number {
+  return kg / 0.45359237;
+}
+
+/** Display/edit units for body metrics. Storage is ALWAYS metric (N4). */
+export type Units = 'metric' | 'imperial';
+
+/**
+ * Round a metric value to its display string in the active units (plan 0006 B1).
+ * Display-only rounding — height to 1 decimal (cm or in), weight to nearest whole
+ * (lb) / 1 decimal (kg). The canonical metric value is never mutated by this.
+ */
+export function heightToDisplay(heightCm: number, units: Units): string {
+  const value = units === 'imperial' ? cmToInches(heightCm) : heightCm;
+  return String(Math.round(value * 10) / 10);
+}
+
+export function weightToDisplay(weightKg: number, units: Units): string {
+  if (units === 'imperial') return String(Math.round(kgToPounds(weightKg)));
+  return String(Math.round(weightKg * 10) / 10);
+}
+
+/**
+ * Unit-aware bounded validator (plan 0006 B2). In imperial the raw value is in
+ * display units; it's converted to metric and checked against the SAME metric
+ * bounds — so a value valid in one unit stays valid after a unit toggle — but the
+ * copy is rendered in the shown unit. The displayed bounds are rounded INWARD
+ * (min up, max down) so any value within the quoted range always passes, and a
+ * rejected value is always truly outside the quoted range.
+ */
+function validateUnitAware(
+  raw: string,
+  units: Units,
+  metricMin: number,
+  metricMax: number,
+  metricNoun: string,
+  imperialNoun: string,
+  toMetric: (n: number) => number,
+  fromMetric: (n: number) => number,
+): string | undefined {
+  const noun = units === 'imperial' ? imperialNoun : metricNoun;
+  if (!raw.trim()) return `Enter your ${noun}.`;
+  const value = parseNumber(raw);
+  if (!Number.isFinite(value)) return `Enter a valid ${noun}.`;
+  const metric = units === 'imperial' ? toMetric(value) : value;
+  if (metric < metricMin || metric > metricMax) {
+    const min = units === 'imperial' ? Math.ceil(fromMetric(metricMin) * 10) / 10 : metricMin;
+    const max = units === 'imperial' ? Math.floor(fromMetric(metricMax) * 10) / 10 : metricMax;
+    return `Enter a ${noun} between ${min} and ${max}.`;
+  }
+  return undefined;
+}
+
+export function validateHeight(raw: string, units: Units): string | undefined {
+  return validateUnitAware(
+    raw,
+    units,
+    HEIGHT_CM_MIN,
+    HEIGHT_CM_MAX,
+    'height (cm)',
+    'height (in)',
+    inchesToCm,
+    cmToInches,
+  );
+}
+
+export function validateWeight(raw: string, units: Units): string | undefined {
+  return validateUnitAware(
+    raw,
+    units,
+    WEIGHT_KG_MIN,
+    WEIGHT_KG_MAX,
+    'weight (kg)',
+    'weight (lb)',
+    poundsToKg,
+    kgToPounds,
+  );
+}
+
+/**
+ * Parse a validated display-unit body value back to metric for storage/compute
+ * (plan 0006 B1/B2). Call ONLY after `validateHeight`/`validateWeight` passed.
+ * In metric it's an identity parse; in imperial it converts in→cm / lb→kg.
+ */
+export function heightToMetric(raw: string, units: Units): number {
+  const value = parseNumber(raw);
+  return units === 'imperial' ? inchesToCm(value) : value;
+}
+
+export function weightToMetric(raw: string, units: Units): number {
+  const value = parseNumber(raw);
+  return units === 'imperial' ? poundsToKg(value) : value;
 }

@@ -388,3 +388,54 @@ column already exists (plan 0001 + 0005). Imperial *display* (deferred in 0005) 
   text-only, so web verification won't catch a missing icon).
 - We stopped before executing 0006 deliberately (session was ~72% context). Plan 0005
   (onboarding+TDEE) already shipped to `main` earlier this session arc (commit eec70de).
+
+---
+
+## 2026-06-21 (session 7) — Executed plan 0006: Profile & Settings (S1 piece 3 → **S1 complete**)
+
+**What we did**
+Executed the approved plan 0006. New **Profile** tab → settings screen with three
+independent sections: (1) **Profile** — `display_name` / `units` (metric⇄imperial) /
+`timezone` (read-only + "use device"); (2) **Daily goals** — inline editor that recomputes
+calories + macros via the existing `computeGoals` and upserts `goals`; (3) **Sign out**
+(moved off Home). Client-only: **no migration, no secrets** — every column already existed.
+This **closes S1 (Auth & Onboarding)**.
+
+**Files**: NEW `src/features/auth/screens/settings-screen.tsx`, `lib/use-profile.tsx`,
+`lib/profile-form.ts`, `src/app/(app)/profile.tsx`, placeholder `assets/images/tabIcons/
+profile{,@2x,@3x}.png` (copied from explore). EDITED `lib/onboarding-form.ts` (+reverse
+converters `cmToInches`/`kgToPounds`, `Units`, unit-aware `validateHeight`/`validateWeight`,
+display/metric helpers, exported `parseNumber`), both `app-tabs{,.web}.tsx` (+Profile tab),
+`app/(app)/index.tsx` (stripped interim Sign out), `scripts/check-tdee.ts` (+round-trip asserts).
+
+**Key decisions & why**
+- **Imperial round-trip safety (B1) via an "edit override" model.** `canonicalBody` (the DB
+  metric) is the single source of truth. `heightEdit`/`weightEdit` are null until the user
+  types — null ⇒ the field DISPLAYS `canonical→active-units` derived **in render** (not via a
+  setState-in-effect, which the lint rules forbid). On save we convert back to metric ONLY
+  for edited fields; unedited fields persist canonical verbatim, so a save never drifts the
+  stored value. A unit toggle / save resets the overrides → display re-derives. Same B1
+  guarantee as the plan, lint-clean. Round-trip asserts now pin the exact-inverse converters.
+- **Unit-aware validation (B2):** validators run in the shown units with bounds rounded
+  INWARD (min up / max down) so a value within the quoted range always passes and a rejected
+  value is always truly out of range; a unit toggle clears height/weight errors.
+- **Reuse over duplication (SF1):** goal validators/options/`computeGoals` come from the
+  shared onboarding modules; `profile-form.ts` holds only `display_name`/timezone concerns.
+- **Independent per-section saves (SF3)**; profile save is an `upsert` (self-heals a missing
+  row); neither write sends `updated_at` (trigger owns it, SF5); goals upsert writes a
+  COMPLETE body-input set (SF6). `user.id` always from `useUser()` (N5).
+
+**Deviations (same contract — see plan execution log)**
+- Added a local `useGoalsRow` hook in the screen (plan only specced `use-profile`); goals
+  still need loading, kept local to the single consumer with the same guard pattern.
+- B1 via edit-override (above) instead of the plan's setState-in-effect deriver.
+- Profile `upsert` instead of `update`; extended check-tdee; regenerated typed routes for
+  the new `/profile` route (expected piece-1/2 churn).
+
+**Verification**: `tsc` clean · `expo lint` clean · `check-tdee.ts` all-pass (incl. new
+round-trip cases) · `expo export --platform web` bundled with no errors. Live web behavioral
+verification (login → edit name → toggle units → save goals → sign out) still pending a
+browser session.
+
+**S1 is now complete.** Next module is whatever the roadmap puts after S1 (camera / meal
+analysis / diary), each with its own plan.

@@ -8,8 +8,6 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useAuth } from '@/lib/auth';
-import { Button } from '@/shared/ui';
 
 function getDevMenuHint() {
   if (Platform.OS === 'web') {
@@ -31,10 +29,6 @@ function getDevMenuHint() {
 }
 
 export default function HomeScreen() {
-  // Interim sign-out: the only way out until S1 piece 3 ships Settings, which will
-  // move this control there (plan 0004 SF4/N4).
-  const { signOut } = useAuth();
-
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
@@ -43,9 +37,6 @@ export default function HomeScreen() {
           <ThemedText type="title" style={styles.title}>
             Welcome to&nbsp;Expo
           </ThemedText>
-          <Button variant="secondary" onPress={signOut}>
-            Sign out
-          </Button>
         </ThemedView>
 
         <ThemedText type="code" style={styles.code}>
