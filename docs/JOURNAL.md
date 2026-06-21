@@ -342,3 +342,49 @@ walkthrough confirmed by the user. Plan 0005 → Done.
   (`npx tsx scripts/check-tdee.ts`) before tuning the macro split / multipliers.
 - The wizard is **metric-only** in v1; imperial display + units editing land in piece 3
   (the `inchesToCm`/`poundsToKg` helpers in `onboarding-form.ts` are already there).
+
+---
+
+## 2026-06-21 (session 6) — Plan 0006 drafted + reviewed: Profile & Settings (S1 piece 3)
+
+**What we did**
+Wrote and **multi-agent-reviewed plan 0006 — Profile & Settings** (S1 piece 3, the
+piece that closes S1). Status: **Approved, not yet executed.** 2 blockers resolved
+in-plan, 8 should-fixes folded in, all 5 open questions decided. No code written.
+
+**Scope of 0006:** a Profile tab → settings screen that (1) edits the profile
+(`display_name`/`units`/`timezone` on `profiles`), (2) views + inline-edits daily goals
+by recomputing TDEE from the stored raw body inputs on `goals` (reusing `tdee.ts` +
+`onboarding-form.ts`), and (3) houses Sign out (moved off Home). **No migration** — every
+column already exists (plan 0001 + 0005). Imperial *display* (deferred in 0005) lands here.
+
+**Key decisions & why (review caught real issues before any code)**
+- **Imperial round-trip safety (B1):** the goals editor keeps the **DB metric values as
+  the single source of truth**; fields display converted/rounded values; on Save it
+  converts back to metric **only for fields the user actually edited** (dirty-tracking) —
+  unedited fields persist the stored metric verbatim. Without this, every save drifted the
+  canonical value (`cmToInches(180)→inchesToCm→179.91`). Display rounding happens only at
+  the UI edge; `cmToInches`/`kgToPounds` are exact inverses.
+- **Unit-aware validation (B2):** validators run in the **active display units** with
+  bounds + copy converted from the metric bounds (a metric-only "between 50 and 272 cm"
+  message on an inches field is wrong); unit toggle clears field errors so bounds always
+  match what's shown.
+- **Reuse, don't duplicate (SF1):** goals validators/options come from `onboarding-form.ts`
+  (shared with the wizard); `profile-form.ts` holds only profile concerns. **`use-profile`
+  stays a plain hook** (rejected the "make it context" note — only one consumer, unlike
+  `useOnboardingStatus`), but copies the mounted/active lifecycle guard.
+- **Decided open questions:** third Profile tab + **placeholder icon** (native tab needs a
+  PNG or the build breaks); imperial = **single inch/lb fields** (no ft+in); **inline**
+  goals editor (not a wizard re-run); timezone = **read-only + "use device"**;
+  `display_name` **optional** (empty→null).
+- **Saves are independent per section** (Save profile / Save goals), not atomic; omit
+  `updated_at` (trigger owns it); goals upsert must write a **complete** body-input set.
+
+**Gotchas for next session**
+- Executing 0006 is **client-only** (no DB/secret/migration) — lighter than 0005, but the
+  imperial state model (B1 dirty-tracking) is the subtle part; get that right first.
+- The native **Profile tab icon** must exist before a native build — copy an existing
+  `assets/images/tabIcons/*` set to `profile{,@2x,@3x}.png` as a placeholder (web tabs are
+  text-only, so web verification won't catch a missing icon).
+- We stopped before executing 0006 deliberately (session was ~72% context). Plan 0005
+  (onboarding+TDEE) already shipped to `main` earlier this session arc (commit eec70de).
