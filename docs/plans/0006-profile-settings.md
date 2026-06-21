@@ -306,8 +306,11 @@ the user** before this is Approved — see Open questions.
 (reverse converters → use-profile + profile-form → settings-screen → route → both tab
 bars + icon → strip Home). Verification: `npx tsc --noEmit` clean, `npx expo lint` clean,
 `npx tsx scripts/check-tdee.ts` green (incl. new round-trip asserts), `npx expo export
---platform web` bundled with no errors. Live behavioral web verification (login → edit →
-toggle → sign out) still pending a browser session.
+--platform web` bundled with no errors. **Live behavioral web verification PASSED**
+(2026-06-21): login → edit name (persists across reload) → toggle units (relabel/convert)
+→ edit weight + save goals (recompute; DB stores metric) → toggle back → bad input blocked
+→ sign out → Home has no Sign out button → B1 no-drift (toggle without editing, save = no
+change). All green.
 
 **Deviations from the plan (all same-contract, noted per WORKFLOW step 3):**
 - **B1 state model implemented as an "edit override", not a setState-in-effect deriver.**

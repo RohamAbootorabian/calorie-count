@@ -433,9 +433,10 @@ display/metric helpers, exported `parseNumber`), both `app-tabs{,.web}.tsx` (+Pr
   the new `/profile` route (expected piece-1/2 churn).
 
 **Verification**: `tsc` clean · `expo lint` clean · `check-tdee.ts` all-pass (incl. new
-round-trip cases) · `expo export --platform web` bundled with no errors. Live web behavioral
-verification (login → edit name → toggle units → save goals → sign out) still pending a
-browser session.
+round-trip cases) · `expo export --platform web` bundled with no errors. **Live web
+behavioral verification PASSED** (login → edit name persists across reload → toggle units
+relabel/convert → edit weight + save goals recompute, DB stores metric → toggle back → bad
+input blocked → sign out → Home clean → B1 no-drift on toggle-without-edit). Confirmed by hand.
 
 **S1 is now complete.** Next module is whatever the roadmap puts after S1 (camera / meal
 analysis / diary), each with its own plan.

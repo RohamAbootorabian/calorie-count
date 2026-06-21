@@ -1,56 +1,45 @@
 # Handoff → Next Session
 
-_Last updated: 2026-06-21 (session 6)_
+_Last updated: 2026-06-21 (session 7)_
 
 ## Where we are
-**S1 (Auth & Onboarding) is 2/3 shipped.** Piece 1 (auth screens, plan 0004) and
-**piece 2 (onboarding + TDEE, plan 0005) are both DONE on `main`** (plan 0005 executed,
-web-verified, commit `eec70de`). **Piece 3 — Profile & Settings (plan 0006) — is
-drafted, reviewed, and Approved but NOT yet executed.** Executing it **closes S1**.
-Tree clean, `tsc` passes.
+**S1 (Auth & Onboarding) is COMPLETE.** All three pieces shipped to `main`:
+piece 1 (auth screens, 0004), piece 2 (onboarding + TDEE, 0005), and now
+**piece 3 — Profile & Settings (plan 0006) — executed, web-verified by hand, and
+pushed** (commit `21bbd3f`). Tree clean, `tsc` + `lint` pass. Plans 0001–0006 all Done.
 
 ## What changed this session
-- **Drafted + multi-agent-reviewed + Approved plan 0006** (Profile & Settings). Did not
-  execute. 2 blockers resolved in-plan (imperial state model + unit-aware validation),
-  8 should-fixes folded in, all 5 open questions decided.
-- (Earlier in this arc: executed plan 0005 — onboarding wizard + TDEE — and shipped it.)
+- **Executed plan 0006 (Profile & Settings)** — a Profile tab → settings screen with three
+  independent sections: profile (`display_name`/`units`/`timezone`), an inline daily-goals
+  editor (recompute via `computeGoals` + upsert `goals`), and Sign out (moved off Home).
+  Client-only — **no migration, no secrets**.
+- Imperial display landed (deferred from 0005): **edit-override** state model keeps DB metric
+  as the single source of truth, converts back only for edited fields (no drift, B1);
+  unit-aware validators with inward-rounded bounds (B2).
+- Stripped the interim Sign out from Home; added the Profile tab to both tab bars (native +
+  placeholder PNG icon, web `href="/profile"`); extended `scripts/check-tdee.ts` with
+  metric⇄imperial round-trip asserts.
+- **Verified**: tsc + expo lint + check-tdee + web bundle export all green, **plus live
+  hand-verification on web** (edit/persist, unit toggle/convert, recompute, bad-input block,
+  sign out, Home clean, B1 no-drift). All passed.
 
 ## Next steps (pick up here)
-1. **Execute plan 0006** ([docs/plans/0006-profile-settings.md](../plans/0006-profile-settings.md)) — Approved, blockers resolved. **No migration / no secrets** (client-only). Build order per its Rollout:
-   - Add reverse converters `cmToInches` / `kgToPounds` to
-     [src/features/auth/lib/onboarding-form.ts](../../src/features/auth/lib/onboarding-form.ts)
-     (exact inverses; UI rounds at the edge), plus the **unit-aware** height/weight
-     validators (B2) shared with the wizard.
-   - `src/features/auth/lib/use-profile.tsx` — plain hook `{ loading, profile, error,
-     refetch }` with the `useOnboardingStatus` mounted/active guard (SF2).
-   - `src/features/auth/lib/profile-form.ts` — `display_name` (≤80, empty→null) +
-     timezone helpers only (reuse goals validators from `onboarding-form.ts`, **don't**
-     duplicate — SF1).
-   - `src/features/auth/screens/settings-screen.tsx` — 3 sections (Profile / Goals inline
-     editor / Sign out), **independent** Save buttons (SF3). **Imperial B1 dirty-tracking
-     is the subtle part — keep DB metric as source of truth, convert back only for edited
-     fields.**
-   - `src/app/(app)/profile.tsx` thin route; add Profile tab to **both**
-     [app-tabs.tsx](../../src/components/app-tabs.tsx) (native — needs a PNG icon) and
-     [app-tabs.web.tsx](../../src/components/app-tabs.web.tsx) (`href="/profile"`).
-   - **Placeholder icon:** copy an existing `assets/images/tabIcons/*` set to
-     `profile{,@2x,@3x}.png` so a native build doesn't break.
-   - Strip the interim Sign out from [src/app/(app)/index.tsx](../../src/app/(app)/index.tsx)
-     (remove the button + `useAuth` import; restore the plain template hero).
-   - Verify on web (edit name → persists; toggle units → fields relabel/convert, edit
-     weight → goals recompute & store metric; bad input blocked; Sign out; Home has no
-     Sign out). Then commit straight to `main`.
-2. **After 0006, S1 is complete.** Next module is whatever the roadmap puts after S1
-   (camera / meal analysis / diary — own plans).
+1. **S1 is done — start the next roadmap module.** Likely camera / meal-capture or the
+   meal-analysis pipeline (photo → Edge Function → Gemini → `MealAnalysis` → phone) or the
+   diary. **Begin with `/plan <task>`** — no feature code before a plan + review (workflow is
+   non-negotiable). Pick the module per the product roadmap.
+2. Before building meal analysis, remember the **architecture rule**: the phone NEVER calls
+   the AI provider directly — photo → Supabase Edge Function → Gemini 2.5 Flash → structured
+   `MealAnalysis`. AI keys live ONLY in Edge Function secrets. `src/types/nutrition.ts` is the
+   single source of truth for the meal data model.
 
 ## Open questions / risks
-- **Imperial state model (B1)** is the one tricky bit: store canonical metric, dirty-track
-  edits, round only for display — otherwise saves drift the stored value. Plan spells it out.
-- **Custom SMTP still needed** before signup-confirm + password-reset *emails* can be
-  tested end-to-end (built-in sender caps ~2/hr → `over_email_send_rate_limit`). Code is
-  correct; this is infra. Configure in Supabase → Auth → Emails → SMTP.
+- **Custom SMTP still needed** before signup-confirm + password-reset *emails* can be tested
+  end-to-end (built-in sender caps ~2/hr → `over_email_send_rate_limit`). Code is correct;
+  this is infra. Configure in Supabase → Auth → Emails → SMTP.
 - A **future deep-link plan** still owes in-app confirm/reset completion (`expo-linking`);
   v1 completes those on Supabase's hosted pages.
+- **Placeholder Profile tab icon** (copied from explore) — real art is a later cosmetic task.
 
 ## How to resume
 Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`.
