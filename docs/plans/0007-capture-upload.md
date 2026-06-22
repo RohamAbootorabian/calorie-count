@@ -1,10 +1,11 @@
 # Plan: Capture & upload a meal photo (S2 · piece 1)
 
-- **Status**: Executed (2026-06-22) — built per plan; `tsc`/`lint` clean, web bundle compiles.
-  **Web click-through verification pending** (user, signed-in + Storage browser); will be marked
-  Done/PASSED in a follow-up like plan 0006. One mechanism deviation (SF7 AbortController →
-  timeout race — storage-js `upload` has no `signal`); see Execution log.
-  _(Approved 2026-06-21 — 3 blockers resolved in-plan, 10 should-fixes folded in.)_
+- **Status**: **Done** (2026-06-22) — built per plan; `tsc`/`lint` clean; **web click-through
+  verification PASSED** (user confirmed: pick → preview → upload → object under the user's
+  `meal-photos/{uid}/…` folder; cancel/bad-file paths friendly). One mechanism deviation (SF7
+  AbortController → timeout race — storage-js `upload` has no `signal`); see Execution log.
+  iPhone camera / native byte path (B2/OQ2) + the N4 web "Take photo" relabel are knowingly
+  deferred to a later session. _(Approved 2026-06-21 — 3 blockers resolved, 10 should-fixes folded.)_
 - **Created**: 2026-06-21
 - **Plan #**: 0007
 
@@ -346,6 +347,8 @@ Supabase Storage browser) — same gate-then-confirm flow as plan 0006._
   available on RN/Hermes — avoids adding a dep, equally collision-proof.
 
 **Verification result:** `npx tsc --noEmit` ✅ · `npx expo lint` ✅ (exit 0) · web bundle builds
-✅ with all new modules included. **Pending:** manual web click-through (pick → preview → upload
-→ object under `meal-photos/{uid}/…` in the Storage browser; cancel = no-op; bad/oversized =
-friendly error) — to be marked PASSED in a follow-up like plan 0006.
+✅ · **web click-through PASSED (2026-06-22, user-confirmed)** — pick → preview → upload → the
+object landed under the user's own `meal-photos/{uid}/…` folder in the Storage browser; cancel
+and bad/oversized paths showed friendly copy. **Plan Done.** Still deferred (not blocking Done):
+iPhone real-camera "Take photo" + the native byte path (B2/OQ2), and the N4 web "Take photo"
+relabel — tracked in memory `capture-deferred-camera-test`.

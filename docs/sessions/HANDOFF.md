@@ -3,11 +3,10 @@
 _Last updated: 2026-06-22 (session 8)_
 
 ## Where we are
-**S2 (Capture & AI Analysis) is in progress.** Piece 1 (capture + upload) is **executed &
-pushed** but its **web click-through verification is still open** (and the iPhone camera /
-native-byte test is deferred). Piece 2 (`analyze-meal` Edge Function) is **planned, multi-agent-
-reviewed, and Approved — NOT executed** (plan 0008, 6 blockers resolved in-plan). Tree clean,
-`tsc` passes.
+**S2 (Capture & AI Analysis) is in progress.** Piece 1 (capture + upload) is **Done** — executed,
+pushed, and **web-verified** (iPhone camera / native-byte test knowingly deferred). Piece 2
+(`analyze-meal` Edge Function) is **planned, multi-agent-reviewed, and Approved — NOT executed**
+(plan 0008, 6 blockers resolved in-plan). Tree clean, `tsc` passes.
 
 ## What changed this session
 - **Executed + pushed plan 0007** (Capture & upload, S2 piece 1) — `expo-image-picker`, picker
@@ -21,11 +20,7 @@ reviewed, and Approved — NOT executed** (plan 0008, 6 blockers resolved in-pla
   in-plan, all should-fixes folded, all open questions decided.
 
 ## Next steps (pick up here)
-1. **(Optional, quick) Close 0007's web verification.** `npx expo start --web`, sign in → Capture
-   tab → Choose from library → JPEG/PNG → Upload → confirm the object lands under
-   `meal-photos/{uid}/…` in the Supabase Storage browser; cancel = no-op; bad/oversized = friendly
-   error. If it passes, mark plan 0007 **PASSED/Done** in a tiny follow-up commit (like 0006 did).
-2. **Execute plan 0008** ([docs/plans/0008-analyze-meal-edge-function.md](../plans/0008-analyze-meal-edge-function.md)) —
+1. **Execute plan 0008** ([docs/plans/0008-analyze-meal-edge-function.md](../plans/0008-analyze-meal-edge-function.md)) —
    Approved. Build order per its Rollout:
    - **First**, land the tooling guards so `tsc`/`expo lint` stay green as Deno files appear:
      `tsconfig.json` → `"exclude": ["supabase"]`; `eslint.config.js` → add `"supabase/**"` to
