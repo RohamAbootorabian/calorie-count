@@ -594,3 +594,37 @@ Done** (commit `ea85ca0`). The iPhone real-camera "Take photo" + native byte pat
 the N4 web "Take photo" relabel remain knowingly deferred (memory `capture-deferred-camera-test`).
 **S2 status:** piece 1 Done & web-verified; piece 2 (`analyze-meal`, plan 0008) Approved, not
 executed — next session executes it.
+
+### Session 9 — 2026-06-22 · Execute plan 0008 (analyze-meal Edge Function, S2 piece 2) — code complete, deploy deferred on B5
+Executed plan 0008 strictly per the approved doc. All code for piece 2 is written and passes
+every local gate — `npx tsc --noEmit`, `npx expo lint`, and `deno check` are green — and the
+`analyze_usage` daily-cap migration is **pushed to the remote DB**. The phone→Edge→Gemini
+round-trip is fully wired but **not deployed and not web-verified**: the user confirmed only a
+**free Gemini tier**, and B5 forbids sending real (health-adjacent) meal photos to the free tier
+(retention/training risk). Code is committed so nothing is lost; the plan is **not marked Done**
+until billing is enabled and the web round-trip is verified.
+
+**Landed:** tooling guards (`tsconfig exclude:["supabase"]`, eslint `ignores:["supabase/**"]`);
+`_shared/cors.ts` (origins pinned, not `*`); migration `20260622120000_analyze_usage.sql` (table
++ owner-only RLS + tamper-proof `bump_analyze_usage` rpc, cap **N=50**, **db push** applied);
+the function `meal-analysis.ts`/`gemini.ts`/`index.ts` (always-200 typed contract, `getUser()`
+anon gate, RLS download as authorization, dual download/Gemini timeouts, `coerceNum`+clamps
+pinned to DB literals, recomputed+re-clamped totals, `finishReason`/null guards, `no_food`,
+bounded retry, logging allow/deny list); `config.toml` `verify_jwt = true`; client helper
+`analyze-meal.ts`; and the Capture **Analyze** step + read-only result card (own state, re-pick
+race guard, bounded MAX-3 retry).
+
+**Why (key decisions):** *why not deploy* — B5: free tier may retain/train on health photos, so
+no real-photo path until paid billing. *why esm.sh for supabase-js* — `jsr:` pulls an npm
+sub-dep `deno check` can't resolve without `node_modules`; esm.sh bundles the graph as ESM so
+both the typecheck and the edge runtime are happy. *why cap charged just before the Gemini call*
+(not at raw entry) — a foreign-path probe fails the RLS download (no Gemini spend) and shouldn't
+burn the user's daily quota; the cost gate still bounds every paid call. *why Deno installed* —
+the Supabase CLI ships no standalone `deno`/`check`, so Deno 2.8.3 was installed (official script;
+backs up `.zshrc`) purely to typecheck the function. **N=50/day** and **CORS = Expo web dev
+origins** chosen at execution (prod origin left as a TODO in `cors.ts`).
+
+**Next session:** enable paid Gemini billing → `supabase secrets set GEMINI_API_KEY=…` (+
+`supabase/.env.local`) → `supabase functions serve` negative/positive matrix → `supabase
+functions deploy analyze-meal --project-ref vldpfoczswakghkrkyrm` → web end-to-end verify (the
+Done gate) → mark plan 0008 Done. Then piece 3 (editable results + save to `meal_logs`/`meal_items`).

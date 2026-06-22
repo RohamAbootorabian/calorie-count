@@ -1,6 +1,10 @@
 # Plan: `analyze-meal` Edge Function — photo → MealAnalysis (S2 · piece 2)
 
-- **Status**: **Approved** (2026-06-22) — multi-agent review: **6 blockers resolved in-plan**
+- **Status**: **Executed — code complete & green, NOT Done** (2026-06-22, session 9). All
+  files written per plan; `tsc` / `expo lint` / `deno check` all pass; the `analyze_usage`
+  migration is pushed to remote. **Deploy + web verify are deferred on B5** — the user holds
+  only the free Gemini tier, which must not receive real meal photos. See `## Execution log`.
+  _Prior:_ **Approved** (2026-06-22) — multi-agent review: **6 blockers resolved in-plan**
   (error contract returns 200+typed body; eslint must ignore Deno; Gemini truncation/empty-
   candidate guarding; reconciled download/Gemini/client timeouts; paid Gemini tier + privacy;
   per-user daily cost cap). All should-fixes folded in; all open questions decided. Ready to
@@ -439,5 +443,68 @@ edge cases 3, data/privacy 2.
   adds a second function).
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+
+### 2026-06-22 (session 9) — code complete + green; deploy/verify deferred on B5
+All code for piece 2 written **strictly per the approved plan** and passing every
+local gate. Deploy + real-photo verification are **knowingly deferred**: the user
+confirmed they currently hold only the **free Gemini tier**, and B5 forbids sending
+real (health-adjacent) meal photos to the free tier (retention/training risk). Code
+is committed so nothing is lost; the function is **not deployed** and **not web-
+verified** until billing is enabled.
+
+**What landed (all green — `npx tsc --noEmit` ✅, `npx expo lint` ✅, `deno check` ✅):**
+- **Tooling guards (first, per Rollout):** `tsconfig.json` → `exclude: ["supabase"]`;
+  `eslint.config.js` → `ignores: ["dist/*", "supabase/**"]` (B2). Verified both stay
+  green with Deno files present.
+- **Migration `20260622120000_analyze_usage.sql`** — `analyze_usage(user_id, day,
+  count)` + owner-only `select` RLS + **SECURITY DEFINER** `bump_analyze_usage(p_limit)`
+  that atomically increments and returns the new count, or **NULL when already at/over
+  the cap** (conditional `ON CONFLICT … WHERE count < p_limit`, so the count never grows
+  past the cap and the function reads NULL → `rate_limited`). `grant execute … to
+  authenticated`, revoked from `anon`/`public`. **Applied to remote via `supabase db
+  push`** (B6). Cap **N = 50/user/day** (decided at execution).
+- **`supabase/functions/_shared/cors.ts`** — origins **pinned** to the Expo web dev
+  origins (`http://localhost:8081`, `http://127.0.0.1:8081`); prod origin left as a
+  TODO; allow-headers `authorization, apikey, content-type` (decided at execution).
+- **`meal-analysis.ts`** — mirror of `nutrition.ts`; `coerceNum`/clamps pinned to the
+  migration literals; totals recomputed via `sumAndClampTotals` (re-clamped to the
+  totals' ranges); `coerceMealAnalysis` + `isNoFood` (empty items, or low-confidence
+  degenerate) + `GEMINI_RESPONSE_SCHEMA` (uppercase types, `propertyOrdering`, nested
+  `items[].nutrients` kept — `totals` omitted on purpose).
+- **`gemini.ts`** — raw `fetch` to `gemini-2.5-flash:generateContent`, key via
+  `x-goog-api-key`; `responseMimeType: application/json` + schema; `maxOutputTokens
+  8192`, `temperature 0.2`; `finishReason !== STOP` + full null-guard chain →
+  `bad_ai_response`; `429`→`rate_limited`, `400/403`→`unknown` ("key rejected", value
+  never logged), `5xx`→`network`; never logs the raw body.
+- **`index.ts`** — Deno 2 `Deno.serve`; **always HTTP 200** + `{ ok, kind }` (B1);
+  `getUser()` anon gate; regex pre-check (cost guard, not auth); **RLS download** is the
+  authorization (no service role); dual timeouts (download 15 s race → `network`, Gemini
+  30 s AbortController → `timeout`); `byteLength ≤ 10 MB` → `too_large`; cap charged just
+  before the paid call; `isNoFood` → `no_food`. Logging allow/deny list honoured.
+- **`config.toml`** — `[functions.analyze-meal] verify_jwt = true`.
+- **Client `src/features/capture/lib/analyze-meal.ts`** — typed `analyzeMeal({path})`,
+  reads the 200 body directly, maps `FunctionsHttpError` 401→`unauthorized`,
+  `FunctionsFetchError`→`network`, client `withTimeout` 35 s→`timeout`; never logs PII.
+- **Capture screen** — own analyze state (`analyzing`/`analysis`/`analyzeError`/
+  `analyzeCanRetry`/`analyzeAttempts`), double-tap guard, `mounted` ref, `currentPath`
+  ref for the re-pick race, **bounded retry (MAX 3)**, read-only result card
+  (dish, confidence, quality, totals cal/P/C/F).
+
+**Deviations from the plan (logged):**
+1. **`deno check` tooling:** Deno wasn't installed (the Supabase CLI exposes no `check`
+   subcommand and bundles no standalone `deno`), so I installed Deno 2.8.3 via the
+   official script (writes to `~/.deno`, backs up `.zshrc`). Used only to typecheck.
+2. **supabase-js import = `https://esm.sh/@supabase/supabase-js@2`** (not `jsr:`): `jsr:`
+   pulls `npm:@supabase/realtime-js` which `deno check` can't resolve without a
+   `node_modules` dir; `esm.sh` bundles the graph as ESM so both `deno check` and the
+   edge runtime are happy. `@std/encoding/base64` stays on `jsr:`.
+3. **Cap charged just before the Gemini call** (after a successful RLS download), not at
+   raw "function entry" — so a foreign-path probe (which fails the download, no Gemini
+   spend) doesn't consume the user's daily quota. The cost gate still bounds every paid
+   call. (Refinement, not a scope change.)
+
+**Still pending (deferred — billing-gated):**
+- Confirm/enable **paid Gemini tier** (B5), then `supabase secrets set GEMINI_API_KEY=…`
+  + `supabase/.env.local`; `supabase functions serve` negative/positive matrix;
+  `supabase functions deploy analyze-meal --project-ref vldpfoczswakghkrkyrm`; **web
+  end-to-end verify** (the Done gate). Until then the plan stays **not Done**.

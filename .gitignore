@@ -44,3 +44,6 @@ example
 
 # local env (secrets)
 .env
+
+# Deno typecheck artifact (edge functions are bundled by the Supabase CLI)
+deno.lock

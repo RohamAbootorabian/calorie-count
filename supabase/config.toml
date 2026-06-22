@@ -385,6 +385,14 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# analyze-meal (plan 0008): require a valid JWT at the gateway. This rejects
+# missing/malformed tokens with a 401 before our code runs; the anon key is
+# itself a valid JWT, so the real "anonymous" rejection is the function's own
+# getUser() check. GEMINI_API_KEY is a server-only secret (supabase secrets set
+# / supabase/.env.local locally) — never an EXPO_PUBLIC var.
+[functions.analyze-meal]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327
