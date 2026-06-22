@@ -3,45 +3,62 @@
 _Last updated: 2026-06-21 (session 7)_
 
 ## Where we are
-**S1 (Auth & Onboarding) is COMPLETE.** All three pieces shipped to `main`:
-piece 1 (auth screens, 0004), piece 2 (onboarding + TDEE, 0005), and now
-**piece 3 — Profile & Settings (plan 0006) — executed, web-verified by hand, and
-pushed** (commit `21bbd3f`). Tree clean, `tsc` + `lint` pass. Plans 0001–0006 all Done.
+**S1 (Auth & Onboarding) is COMPLETE and shipped** — plans 0001–0006 all Done; the app has
+auth, onboarding+TDEE, and Profile/Settings, hand-verified on web. We've now opened **S2
+(Capture & AI Analysis)**, the product core, and **plan 0007 — Capture & upload (S2 piece 1)
+is drafted, multi-agent-reviewed, and Approved but NOT executed.** Tree clean, `tsc` passes.
 
 ## What changed this session
-- **Executed plan 0006 (Profile & Settings)** — a Profile tab → settings screen with three
-  independent sections: profile (`display_name`/`units`/`timezone`), an inline daily-goals
-  editor (recompute via `computeGoals` + upsert `goals`), and Sign out (moved off Home).
-  Client-only — **no migration, no secrets**.
-- Imperial display landed (deferred from 0005): **edit-override** state model keeps DB metric
-  as the single source of truth, converts back only for edited fields (no drift, B1);
-  unit-aware validators with inward-rounded bounds (B2).
-- Stripped the interim Sign out from Home; added the Profile tab to both tab bars (native +
-  placeholder PNG icon, web `href="/profile"`); extended `scripts/check-tdee.ts` with
-  metric⇄imperial round-trip asserts.
-- **Verified**: tsc + expo lint + check-tdee + web bundle export all green, **plus live
-  hand-verification on web** (edit/persist, unit toggle/convert, recompute, bad-input block,
-  sign out, Home clean, B1 no-drift). All passed.
+- **Executed + web-verified plan 0006 (Profile & Settings)** → closed S1 (commits `21bbd3f`,
+  `8cb02ad`).
+- **Sliced S2 into 3 pieces** (1: capture+upload · 2: `analyze-meal` Edge Function + Gemini ·
+  3: editable results + save to `meal_logs`/`meal_items`).
+- **Drafted + reviewed + Approved plan 0007** (S2 piece 1). 3 blockers resolved in-plan, 10
+  should-fixes folded in, all open questions decided. No feature code written.
 
 ## Next steps (pick up here)
-1. **S1 is done — start the next roadmap module.** Likely camera / meal-capture or the
-   meal-analysis pipeline (photo → Edge Function → Gemini → `MealAnalysis` → phone) or the
-   diary. **Begin with `/plan <task>`** — no feature code before a plan + review (workflow is
-   non-negotiable). Pick the module per the product roadmap.
-2. Before building meal analysis, remember the **architecture rule**: the phone NEVER calls
-   the AI provider directly — photo → Supabase Edge Function → Gemini 2.5 Flash → structured
-   `MealAnalysis`. AI keys live ONLY in Edge Function secrets. `src/types/nutrition.ts` is the
-   single source of truth for the meal data model.
+1. **Execute plan 0007** ([docs/plans/0007-capture-upload.md](../plans/0007-capture-upload.md)) —
+   Approved, client-only, **no migration** (bucket + RLS exist from 0001). Build order per its
+   Rollout:
+   - **First:** `npx expo install expo-image-picker`, then add its config plugin + iOS
+     permission strings to [app.json](../../app.json) (see the plan's "The dependency" block).
+   - `src/features/capture/lib/pick-photo.ts` — permissioned picker wrappers returning a
+     **discriminated union** `{status:'ok'|'cancelled'|'denied'}` (SF5); iOS `limited` == usable.
+   - `src/features/capture/lib/upload-meal-photo.ts` — `uploadMealPhoto({ photo })`: uid from
+     session (SF2); **reject non-jpeg/png mime client-side** + extension from resolved mime (B1);
+     `${uid}/${randomUUID}.<ext>` path; **assert `byteLength>0`** (B2); `upsert:false` +
+     `AbortController` timeout (SF7); returns `{ok:true, path:data.path}` (bucket-relative, SF1)
+     or `{ok:false, kind}` (B3); never log uri/path/bytes.
+   - `src/features/capture/screens/capture-screen.tsx` — pick → preview → upload; local
+     `mounted` ref (SF8); transient-only retry (B3); reuse S1 `saveErrorMessage` 401/403 mapping.
+   - `src/app/(app)/capture.tsx` thin route; add a **Capture tab** to BOTH
+     [app-tabs.tsx](../../src/components/app-tabs.tsx) (native — needs a PNG icon) and
+     [app-tabs.web.tsx](../../src/components/app-tabs.web.tsx) (`href="/capture"`).
+   - **Placeholder icon:** copy an existing `assets/images/tabIcons/*` set → `capture{,@2x,@3x}.png`.
+   - Regenerate typed routes for `/capture` (run the dev server once — the 0006 `/profile` lesson).
+   - Verify on **web** (pick → preview → upload → success path; object lands under the user's
+     folder in the Supabase Storage browser; cancel = no-op; bad/oversized = friendly error).
+     Then commit straight to `main`.
+2. **After 0007 → piece 2:** plan the `analyze-meal` Edge Function (Gemini 2.5 Flash). Remember
+   the architecture rule: the phone NEVER calls the AI; photo path → Edge Function → `MealAnalysis`.
 
 ## Open questions / risks
-- **Custom SMTP still needed** before signup-confirm + password-reset *emails* can be tested
-  end-to-end (built-in sender caps ~2/hr → `over_email_send_rate_limit`). Code is correct;
-  this is infra. Configure in Supabase → Auth → Emails → SMTP.
-- A **future deep-link plan** still owes in-app confirm/reset completion (`expo-linking`);
-  v1 completes those on Supabase's hosted pages.
-- **Placeholder Profile tab icon** (copied from explore) — real art is a later cosmetic task.
+- **`expo-image-picker` not installed yet** — it's the first execute step (above).
+- **Native byte path is unverified (B2):** `fetch().arrayBuffer()` can return 0-byte on some
+  Android builds. Web is the Done gate; the 0-byte guard makes it safe; if a device fails,
+  switch to `base64:true` + `base64-arraybuffer` `decode()` (named follow-up, plan OQ2).
+- **iOS HEIC (B1):** guarded by the client-side jpeg/png reject; full re-encode
+  (`expo-image-manipulator`) is deferred native hardening.
+- **Storage lifecycle/privacy (plan OQ6, owned not built):** orphan-object cleanup job,
+  account/meal-delete must also delete Storage objects (the `auth.users` cascade does NOT),
+  and a privacy-policy line for photo storage — health data starts accruing at this piece.
+- **Custom SMTP** still needed before signup-confirm/password-reset *emails* test end-to-end
+  (infra, not code; Supabase → Auth → Emails → SMTP). Future deep-link plan owes in-app
+  confirm/reset completion (`expo-linking`).
+- Watch the two lint rules during execution: no ref read in render, no setState synchronously
+  in an effect (both bit us in 0006).
 
 ## How to resume
 Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`.
-Work from `/Users/roham_abt/Desktop/calorie count` (quote the space). Build **sequentially
-on `main`** (commit straight, no PRs). **Converse in Persian.**
+Work from `/Users/roham_abt/Desktop/calorie count` (quote the space). Build **sequentially on
+`main`** (commit straight, no PRs). **Converse in Persian.**

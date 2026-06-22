@@ -440,3 +440,55 @@ input blocked → sign out → Home clean → B1 no-drift on toggle-without-edit
 
 **S1 is now complete.** Next module is whatever the roadmap puts after S1 (camera / meal
 analysis / diary), each with its own plan.
+
+---
+
+## 2026-06-21 (session 7, cont.) — Drafted + reviewed plan 0007: Capture & upload (S2 piece 1)
+
+**What we did**
+With S1 closed, opened **S2 (Capture & AI Analysis)** — the product core. Sliced S2 into
+three pieces (1: capture+upload · 2: `analyze-meal` Edge Function + Gemini · 3: editable
+results + save to `meal_logs`/`meal_items`) and **wrote + multi-agent-reviewed plan 0007**
+for piece 1. Status: **Approved, not yet executed.** No feature code written.
+
+**Scope of 0007:** signed-in user takes/picks a meal photo (`expo-image-picker`, SDK 56),
+previews it, uploads to the existing private `meal-photos/{uid}/…` Storage bucket, returns
+the path. **No AI, no DB write, no migration** — the bucket + per-user-folder RLS already
+exist from plan 0001 (verified). New `src/features/capture/` module + a 4th Capture tab.
+
+**Key decisions & why (review caught real robustness gaps before any code)**
+- **Architecture & Data lenses found zero blockers** — bucket is genuinely private, and the
+  path `${uid}/${name}` correctly satisfies the RLS `(storage.foldername(name))[1] =
+  auth.uid()` (RLS enforced server-side against the JWT, so a spoofed uid fails WITH CHECK).
+- **3 blockers, all about uploading real images, resolved in-plan:**
+  - **B1 — jpeg/png + correct contentType (iOS HEIC):** reject any non-jpeg/png mime
+    client-side *before* upload; derive the extension from the resolved mime (never hardcode
+    `.jpg`). Bucket allows only jpeg/png; HEIC bytes or a mislabeled contentType would either
+    be rejected at insert or poison piece 2's Gemini call. `expo-image-manipulator` re-encode
+    deferred to native hardening — the client reject is the guard.
+  - **B2 — native byte path + 0-byte guard:** `fetch(uri).arrayBuffer()` is reliable on web
+    but flaky on some Android builds; assert `byteLength > 0` regardless of platform so a bad
+    read fails loudly instead of creating a 0-byte orphan. "Done" gated on **web** only;
+    base64 (`base64-arraybuffer` `decode()`) is a named native follow-up.
+  - **B3 — retry semantics:** helper returns a typed error `kind`
+    (`too_large`/`unsupported`/`unauthorized`/`network`/`unknown`); the screen offers a bare
+    retry only for transient kinds, and for permanent kinds tells the user what to change. A
+    deterministic mime/size rejection must not trap the user re-uploading identical bytes.
+- **10 should-fixes folded in:** persist bucket-relative `data.path` (not `fullPath`, SF1);
+  read uid from the session inside the helper, hard-fail if not a uuid (SF2); collision-proof
+  `randomUUID` filename (SF3); typed/sanitized errors reusing S1's `saveErrorMessage` 401/403
+  mapping, no PII logged (SF4); picker returns a discriminated union, iOS `limited` counts as
+  usable (SF5); `quality:0.7` is best-effort not the size guard — check `fileSize` (SF6);
+  `AbortController` upload timeout (SF7); mounted-ref lives locally in the screen (SF8); orphan
+  cleanup + delete-cascade-to-Storage + privacy-policy line are tracked obligations for a later
+  piece (SF9); short signed-URL TTL, never `getPublicUrl` (SF10).
+
+**Gotchas for next session**
+- **`expo-image-picker` is NOT installed** — first execute step is `npx expo install
+  expo-image-picker` + add its config plugin (iOS permission strings) to `app.json`.
+- New `/capture` route will need typed-routes regeneration (run the dev server once — the
+  piece-1/2 lesson, same as plan 0006's `/profile`).
+- Watch the project's two lint rules during execution: no ref read in render, no setState
+  synchronously in an effect (both bit us in plan 0006).
+- The data starts accruing real health-data photos here — SF9's cleanup/deletion/privacy
+  obligations are logged in 0007 OQ6 so they're owned, not forgotten.
