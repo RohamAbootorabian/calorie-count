@@ -1,64 +1,64 @@
 # Handoff → Next Session
 
-_Last updated: 2026-06-21 (session 7)_
+_Last updated: 2026-06-22 (session 8)_
 
 ## Where we are
-**S1 (Auth & Onboarding) is COMPLETE and shipped** — plans 0001–0006 all Done; the app has
-auth, onboarding+TDEE, and Profile/Settings, hand-verified on web. We've now opened **S2
-(Capture & AI Analysis)**, the product core, and **plan 0007 — Capture & upload (S2 piece 1)
-is drafted, multi-agent-reviewed, and Approved but NOT executed.** Tree clean, `tsc` passes.
+**S2 (Capture & AI Analysis) is in progress.** Piece 1 (capture + upload) is **executed &
+pushed** but its **web click-through verification is still open** (and the iPhone camera /
+native-byte test is deferred). Piece 2 (`analyze-meal` Edge Function) is **planned, multi-agent-
+reviewed, and Approved — NOT executed** (plan 0008, 6 blockers resolved in-plan). Tree clean,
+`tsc` passes.
 
 ## What changed this session
-- **Executed + web-verified plan 0006 (Profile & Settings)** → closed S1 (commits `21bbd3f`,
-  `8cb02ad`).
-- **Sliced S2 into 3 pieces** (1: capture+upload · 2: `analyze-meal` Edge Function + Gemini ·
-  3: editable results + save to `meal_logs`/`meal_items`).
-- **Drafted + reviewed + Approved plan 0007** (S2 piece 1). 3 blockers resolved in-plan, 10
-  should-fixes folded in, all open questions decided. No feature code written.
+- **Executed + pushed plan 0007** (Capture & upload, S2 piece 1) — `expo-image-picker`, picker
+  wrappers, typed upload helper, capture screen, Capture tab in both tab bars. Commit `0521821`.
+  Two logged deviations: SF7 AbortController→timeout race (storage-js `upload` has no `signal`);
+  filename `Date.now()+rand` (no UUID dep on Hermes).
+- **Web-verified 0007 only by smoke test** (bundle compiles); the **manual web click-through is
+  pending the user**, and the **real-camera + native byte path is deferred** to a later session
+  (saved to memory `capture-deferred-camera-test`; user has an iPhone 16 Pro Max).
+- **Drafted + reviewed + Approved plan 0008** (`analyze-meal` Edge Function). 6 blockers resolved
+  in-plan, all should-fixes folded, all open questions decided.
 
 ## Next steps (pick up here)
-1. **Execute plan 0007** ([docs/plans/0007-capture-upload.md](../plans/0007-capture-upload.md)) —
-   Approved, client-only, **no migration** (bucket + RLS exist from 0001). Build order per its
-   Rollout:
-   - **First:** `npx expo install expo-image-picker`, then add its config plugin + iOS
-     permission strings to [app.json](../../app.json) (see the plan's "The dependency" block).
-   - `src/features/capture/lib/pick-photo.ts` — permissioned picker wrappers returning a
-     **discriminated union** `{status:'ok'|'cancelled'|'denied'}` (SF5); iOS `limited` == usable.
-   - `src/features/capture/lib/upload-meal-photo.ts` — `uploadMealPhoto({ photo })`: uid from
-     session (SF2); **reject non-jpeg/png mime client-side** + extension from resolved mime (B1);
-     `${uid}/${randomUUID}.<ext>` path; **assert `byteLength>0`** (B2); `upsert:false` +
-     `AbortController` timeout (SF7); returns `{ok:true, path:data.path}` (bucket-relative, SF1)
-     or `{ok:false, kind}` (B3); never log uri/path/bytes.
-   - `src/features/capture/screens/capture-screen.tsx` — pick → preview → upload; local
-     `mounted` ref (SF8); transient-only retry (B3); reuse S1 `saveErrorMessage` 401/403 mapping.
-   - `src/app/(app)/capture.tsx` thin route; add a **Capture tab** to BOTH
-     [app-tabs.tsx](../../src/components/app-tabs.tsx) (native — needs a PNG icon) and
-     [app-tabs.web.tsx](../../src/components/app-tabs.web.tsx) (`href="/capture"`).
-   - **Placeholder icon:** copy an existing `assets/images/tabIcons/*` set → `capture{,@2x,@3x}.png`.
-   - Regenerate typed routes for `/capture` (run the dev server once — the 0006 `/profile` lesson).
-   - Verify on **web** (pick → preview → upload → success path; object lands under the user's
-     folder in the Supabase Storage browser; cancel = no-op; bad/oversized = friendly error).
-     Then commit straight to `main`.
-2. **After 0007 → piece 2:** plan the `analyze-meal` Edge Function (Gemini 2.5 Flash). Remember
-   the architecture rule: the phone NEVER calls the AI; photo path → Edge Function → `MealAnalysis`.
+1. **(Optional, quick) Close 0007's web verification.** `npx expo start --web`, sign in → Capture
+   tab → Choose from library → JPEG/PNG → Upload → confirm the object lands under
+   `meal-photos/{uid}/…` in the Supabase Storage browser; cancel = no-op; bad/oversized = friendly
+   error. If it passes, mark plan 0007 **PASSED/Done** in a tiny follow-up commit (like 0006 did).
+2. **Execute plan 0008** ([docs/plans/0008-analyze-meal-edge-function.md](../plans/0008-analyze-meal-edge-function.md)) —
+   Approved. Build order per its Rollout:
+   - **First**, land the tooling guards so `tsc`/`expo lint` stay green as Deno files appear:
+     `tsconfig.json` → `"exclude": ["supabase"]`; `eslint.config.js` → add `"supabase/**"` to
+     `ignores` (B2 — ESLint does NOT read tsconfig.exclude).
+   - Write + `supabase db push` the `analyze_usage` daily-cap migration (B6).
+   - `supabase/functions/analyze-meal/{meal-analysis,gemini,index}.ts` +
+     `supabase/functions/_shared/cors.ts` (Deno 2 `Deno.serve`; CORS pinned to known origins).
+     The function **always returns HTTP 200 + `{ok,kind}`** (B1); dual download/Gemini timeouts
+     (B4); `finishReason!==STOP` + null-guards (B3); `coerceNum` + re-clamp totals.
+   - Confirm the **paid Gemini tier** (B5); `supabase secrets set GEMINI_API_KEY=…` (+ local
+     `supabase/.env.local`); add `[functions.analyze-meal] verify_jwt = true` to `config.toml`.
+   - `deno check` + `supabase functions serve` (positive + negatives: no-JWT, foreign path,
+     malformed body, non-food image, broken key, 429) → `supabase functions deploy analyze-meal
+     --project-ref vldpfoczswakghkrkyrm`.
+   - Client helper `src/features/capture/lib/analyze-meal.ts` (`withTimeout`, exhaustive `kind`
+     switch) + an **Analyze** step on the Capture screen with its **own** state + bounded retry.
+   - Verify on web; commit straight to `main`. Next: piece 3 (editable results + save to
+     `meal_logs`/`meal_items`).
 
 ## Open questions / risks
-- **`expo-image-picker` not installed yet** — it's the first execute step (above).
-- **Native byte path is unverified (B2):** `fetch().arrayBuffer()` can return 0-byte on some
-  Android builds. Web is the Done gate; the 0-byte guard makes it safe; if a device fails,
-  switch to `base64:true` + `base64-arraybuffer` `decode()` (named follow-up, plan OQ2).
-- **iOS HEIC (B1):** guarded by the client-side jpeg/png reject; full re-encode
-  (`expo-image-manipulator`) is deferred native hardening.
-- **Storage lifecycle/privacy (plan OQ6, owned not built):** orphan-object cleanup job,
-  account/meal-delete must also delete Storage objects (the `auth.users` cascade does NOT),
-  and a privacy-policy line for photo storage — health data starts accruing at this piece.
-- **Custom SMTP** still needed before signup-confirm/password-reset *emails* test end-to-end
-  (infra, not code; Supabase → Auth → Emails → SMTP). Future deep-link plan owes in-app
-  confirm/reset completion (`expo-linking`).
-- Watch the two lint rules during execution: no ref read in render, no setState synchronously
-  in an effect (both bit us in 0006).
+- **0007 web verify + iPhone test still open** (above) — health-data photos start accruing here;
+  0007 SF9 (orphan cleanup, delete-cascade-to-Storage, privacy-policy line) remains owned.
+- **Gemini `responseSchema`** is a JSON-Schema subset (no `$ref`) — confirm nested
+  `items[].nutrients` is accepted or flatten it (plan 0008 still-open item).
+- **Paid Gemini tier is a hard prerequisite** (B5) before sending real photos; the free tier may
+  train on them. Pick the daily-cap `N` (B6, ~50) and exact CORS origins at execution.
+- **Postgres accepts `NaN`** under `>= 0` checks — coercion must strip NaN (load-bearing for
+  piece 3's insert).
+- Watch the two lint rules during execution: no ref read in render, no setState synchronously in
+  an effect (bit us in 0006).
+- **Custom SMTP** still needed before signup-confirm/reset *emails* test end-to-end (infra).
 
 ## How to resume
-Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`.
-Work from `/Users/roham_abt/Desktop/calorie count` (quote the space). Build **sequentially on
-`main`** (commit straight, no PRs). **Converse in Persian.**
+Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`. Work from
+`/Users/roham_abt/Desktop/calorie count` (quote the space). Build **sequentially on `main`**
+(commit straight, no PRs). **Converse in Persian.**

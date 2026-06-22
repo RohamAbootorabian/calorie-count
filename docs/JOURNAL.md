@@ -536,3 +536,52 @@ screen, both helpers, and `expo-image-picker` all included. **Web click-through 
 pending the user** (signed-in session + Supabase Storage browser), then it gets marked PASSED in a
 follow-up commit — same gate-then-confirm flow as plan 0006. Next: piece 2 (`analyze-meal` Edge
 Function, Gemini 2.5 Flash).
+
+---
+
+## Session 8 (cont.) — 2026-06-22 · Plan 0008 drafted + reviewed (analyze-meal, S2 piece 2)
+
+**What:** After executing/pushing plan 0007 and handing its web verification to the user (web
+smoke-tested; on-device camera + native byte path deferred to a later session, saved to
+memory), we **planned S2 piece 2** — the `analyze-meal` Edge Function — and ran a 4-lens
+multi-agent review. **Status: Approved, NOT executed.** No feature code written.
+
+**Scope of 0008:** a Supabase Edge Function (Deno) that authenticates the caller, confirms they
+own the stored photo path **via RLS** (download with the user-scoped client, never service-
+role), downloads the bytes, calls **Gemini 2.5 Flash** (vision, structured `responseSchema`),
+validates/coerces the JSON into a `MealAnalysis` (per `src/types/nutrition.ts`), and returns it.
+The phone NEVER calls Gemini; the key is an Edge Function secret. No `meal_logs` write (piece 3);
+a minimal read-only result card on the Capture screen is the verify surface.
+
+**Review — 6 blockers, all resolved in-plan (why they mattered):**
+- **B1 — error contract:** `supabase.functions.invoke` wraps any non-2xx in `FunctionsHttpError`
+  with `data=null`, hiding our typed `kind`. Resolution: the function **always returns HTTP 200**
+  with `{ ok, kind }` so the client reads `data` directly and the retry logic works.
+- **B2 — `expo lint` fails on Deno code:** ESLint flat config doesn't read `tsconfig.exclude`;
+  must add `supabase/**` to `eslint.config.js` `ignores` (the plan had only guarded `tsc`).
+- **B3 — Gemini robustness:** `finishReason: MAX_TOKENS` gives truncated JSON; empty/SAFETY
+  candidates throw `TypeError`. Resolution: check `finishReason !== STOP` + null-guard the whole
+  chain → `bad_ai_response`; raise `maxOutputTokens`.
+- **B4 — timeouts:** three layers were unreconciled and the client had none. Resolution: dual
+  server AbortControllers (download ~15s / Gemini ~30s) + client `withTimeout` ~35s.
+- **B5 — privacy:** the free Gemini tier may retain/train on images (health data). Resolution:
+  pin the **paid/Vertex tier** + a tracked privacy-policy obligation.
+- **B6 — cost:** `verify_jwt` stops anon abuse, not an authenticated loop against a paid API.
+  Resolution: a crude **per-user/day cap** (`analyze_usage` table + `rate_limited`) — adds the
+  one small migration in this piece.
+- **Should-fixes folded:** `coerceNum` + re-clamp recomputed totals to the totals' DB ranges
+  (item caps don't bound the sum), default `dishName`, collapse not-owned/missing → `not_found`,
+  distinct `429`/`rate_limited` + bounded `bad_ai_response` retry, isolated analyze screen state,
+  explicit log allow/deny list, CORS pinned to known origins, Deno 2 idioms. All 7 open questions
+  decided.
+
+**Gotchas for next session (execution of 0008):**
+- The `tsconfig exclude:["supabase"]` AND `eslint ignores:["supabase/**"]` must land **first**,
+  before any Deno file, or `tsc`/`expo lint` break on Deno globals/imports.
+- Gemini `responseSchema` is a JSON-Schema **subset** (no `$ref`, keep flat) — confirm the
+  nested `items[].nutrients` shape is accepted or flatten it.
+- Confirm the **paid Gemini tier** before sending real photos; set `GEMINI_API_KEY` via
+  `supabase secrets set` (server-only, NOT in `.env.example`).
+- Postgres accepts `NaN` under `>= 0` checks — coercion MUST strip NaN before piece 3's insert.
+- **Plan 0007 web verification is still open** (user to click through pick→upload→Storage), and
+  the iPhone camera/native-byte test is deferred (see memory `capture-deferred-camera-test`).
