@@ -1,8 +1,10 @@
 # Plan: Capture & upload a meal photo (S2 · piece 1)
 
-- **Status**: Approved (2026-06-21) — multi-agent review: 3 blockers resolved in-plan
-  (jpeg/png + contentType guard, native byte 0-guard, transient-vs-permanent retry); 10
-  should-fixes folded in; all open questions decided. Ready to execute.
+- **Status**: Executed (2026-06-22) — built per plan; `tsc`/`lint` clean, web bundle compiles.
+  **Web click-through verification pending** (user, signed-in + Storage browser); will be marked
+  Done/PASSED in a follow-up like plan 0006. One mechanism deviation (SF7 AbortController →
+  timeout race — storage-js `upload` has no `signal`); see Execution log.
+  _(Approved 2026-06-21 — 3 blockers resolved in-plan, 10 should-fixes folded in.)_
 - **Created**: 2026-06-21
 - **Plan #**: 0007
 
@@ -310,5 +312,40 @@ all 5 open questions decided. Re-review not required (no scope change, only hard
   delete-cascade-to-Storage, privacy-policy line) — see Open questions OQ6.
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+_Executed 2026-06-22 (session 8). Built strictly in the planned order; `tsc` + `expo
+lint` clean; web bundle compiles with the screen, both helpers, and `expo-image-picker`
+all included. **Web click-through verification is pending the user** (signed-in session +
+Supabase Storage browser) — same gate-then-confirm flow as plan 0006._
+
+**What was built (all per plan):**
+- `npx expo install expo-image-picker` (SDK-56 compatible) + its config plugin with the
+  iOS permission strings added to `app.json`.
+- `pick-photo.ts` — `takePhoto()`/`pickFromLibrary()` returning the discriminated union
+  (`ok`/`cancelled`/`denied`), `mediaTypes:['images']`, `limited` access counts as usable.
+- `upload-meal-photo.ts` — `uploadMealPhoto({ photo })`: uid from session + uuid hard-fail
+  (SF2); jpeg/png mime allowlist with mime-derived extension (B1); `fileSize` pre-check
+  (SF6); `${uid}/${Date.now()}-${rand}.<ext>` path (SF3); `byteLength>0` guard (B2); typed
+  error `kind` (B3); no uri/path/bytes logged (SF4).
+- `capture-screen.tsx` — pick → preview (`expo-image`) → upload; transient-only Retry (B3);
+  local `mounted` ref (SF8); per-source denial hints.
+- `(app)/capture.tsx` route + Capture tab in **both** tab bars + placeholder `capture*.png`
+  icon (copied from `explore`); typed routes regenerated (dev server once).
+
+**Deviations from the plan (WORKFLOW step 3):**
+- **SF7 — AbortController → timeout race.** The plan specified wrapping the upload in an
+  `AbortController` with a ~45 s timeout. The installed `@supabase/storage-js` (hoisted under
+  `supabase-js ^2.108.1`) exposes `signal` only on `FetchParameters` (download/list), **not on
+  the `upload()` `FileOptions`** — so `upload` cannot be aborted via a signal in this version
+  (`tsc` rejected `{ signal }`). Implemented SF7's *intent* instead: race the upload against a
+  45 s timer (`withTimeout`) so a stall surfaces as a transient `network` error (no infinite
+  spinner) and the screen offers Retry. The in-flight request isn't truly cancelled (a timed-out
+  upload may still land an object — already covered by the SF9 orphan-cleanup obligation). No
+  scope/behaviour change beyond the abort mechanism; no re-review needed.
+- **Filename:** used `${Date.now()}-${rand}` (the plan's named SF3 alternative) rather than
+  `crypto.randomUUID()`, since no UUID dependency is installed and `crypto.randomUUID` isn't
+  available on RN/Hermes — avoids adding a dep, equally collision-proof.
+
+**Verification result:** `npx tsc --noEmit` ✅ · `npx expo lint` ✅ (exit 0) · web bundle builds
+✅ with all new modules included. **Pending:** manual web click-through (pick → preview → upload
+→ object under `meal-photos/{uid}/…` in the Storage browser; cancel = no-op; bad/oversized =
+friendly error) — to be marked PASSED in a follow-up like plan 0006.
