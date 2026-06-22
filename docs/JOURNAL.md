@@ -585,3 +585,12 @@ a minimal read-only result card on the Capture screen is the verify surface.
 - Postgres accepts `NaN` under `>= 0` checks — coercion MUST strip NaN before piece 3's insert.
 - **Plan 0007 web verification is still open** (user to click through pick→upload→Storage), and
   the iPhone camera/native-byte test is deferred (see memory `capture-deferred-camera-test`).
+
+### Session 8 close — 2026-06-22 · Plan 0007 web-verified → Done
+User ran the web click-through for plan 0007 (Capture & upload) and confirmed it: pick →
+preview → upload → the object landed under the user's own `meal-photos/{uid}/…` folder in the
+Supabase Storage browser; cancel and bad/oversized paths showed friendly copy. **Plan 0007 →
+Done** (commit `ea85ca0`). The iPhone real-camera "Take photo" + native byte path (B2/OQ2) and
+the N4 web "Take photo" relabel remain knowingly deferred (memory `capture-deferred-camera-test`).
+**S2 status:** piece 1 Done & web-verified; piece 2 (`analyze-meal`, plan 0008) Approved, not
+executed — next session executes it.
