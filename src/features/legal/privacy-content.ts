@@ -7,8 +7,10 @@
  *   - Private `meal-photos` bucket + owner-only RLS — `20260619102510_initial_schema.sql`.
  *   - Collected data mirrors the real schema, incl. the `goals` body inputs from
  *     `20260619192848_goals_body_inputs.sql`.
- *   - Deletion is honest: there is NO self-serve delete and a row delete does NOT
- *     remove the Storage photo file (0007 SF9), so deletion is an email request.
+ *   - Deletion is honest: you CAN delete individual meals in-app (plan 0012 —
+ *     the History tab; the row delete also best-effort removes the Storage photo),
+ *     but account/bulk deletion is still an email request (no self-serve account
+ *     deletion yet).
  *
  * Constants are grouped separately from the section prose so a future
  * `src/constants/legal.ts` extraction (shared with ToS / store metadata) is trivial.
@@ -64,7 +66,8 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
     heading: 'Retention and deletion',
     body: [
       'We keep your meals, photos, and profile data until you ask us to delete them.',
-      `To delete your data or your account, email us at ${CONTACT_EMAIL} and we'll remove it.`,
+      'You can delete an individual meal from the History tab inside the app — this removes the meal and its photo.',
+      `To delete your whole account or all of your data at once, email us at ${CONTACT_EMAIL} and we'll remove it.`,
     ],
   },
   {

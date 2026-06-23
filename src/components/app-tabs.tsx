@@ -19,8 +19,9 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>Explore</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="history">
+        <NativeTabs.Trigger.Label>History</NativeTabs.Trigger.Label>
+        {/* Reusing the old explore icon as a placeholder until real art lands (plan 0012). */}
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/explore.png')}
           renderingMode="template"

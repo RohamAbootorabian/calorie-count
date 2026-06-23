@@ -339,5 +339,31 @@ edge-case findings (rollback races, sign-out-mid-delete ghost rows, idempotent-r
 - "Row first, photo second" ordering is correct: a failed row-delete must never delete the photo.
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+### 2026-06-24 (session 12) — built; static-verified; awaiting user web-verify
+Implemented strictly per the approved plan; no design deviations.
+- **NEW `src/features/history/lib/use-meal-history.tsx`** — `{ loading, meals, error, refetch }` only
+  (no optimistic mutators). Copies `useProfile`'s lifecycle discipline (mounted ref + active flag +
+  `(userId, reloadKey)`-keyed outcome). Mandatory `.eq('user_id', userId)` + newest-first + `limit(100)`.
+  Column allowlist enforced by the exported `MealCard = Pick<…Row, …>` type; a `SELECT_COLUMNS` string is
+  the single source. No-PII logging.
+- **NEW `src/features/history/lib/delete-meal.ts`** — `deleteMeal(id, imagePath: string | null)`: row
+  delete (RLS owner-scoped; `meal_items` cascades) wrapped in a 15 s `withTimeout` (mirrors `saveMeal`);
+  `ok` iff `error === null` (0-row = already-gone = success); SQLSTATE `28000/42501` → `unauthorized`,
+  thrown/timeout → `network`. Best-effort `deleteMealPhoto(imagePath)` fired (not awaited) only after the
+  row delete succeeds, skipped on null path. Logs only the typed kind.
+- **NEW `src/features/history/screens/history-screen.tsx`** — `FlatList` (`keyExtractor` = `id`) with
+  loading / empty / error+Retry; delete is **await-then-refetch** (no rollback); in-flight `Set<id>`
+  gates both the confirm dialog and the call; `Alert.alert` native / `window.confirm` web; pull-to-refresh
+  via `RefreshControl` on native, header **Refresh** button as the web path; "Showing your 100 most
+  recent meals" note when at the limit; non-PII inline "Couldn't delete" message; `mounted` ref.
+- **RENAME `(app)/explore.tsx` → `(app)/history.tsx`** (thin re-export). **EDIT both tab files**
+  (`app-tabs.tsx` + `app-tabs.web.tsx` → `name="history"` / `href="/history"`, label History) — B1.
+  Updated the `(app)/_layout.tsx` comment. Grepped: no remaining `/explore` references in code.
+- **EDIT `privacy-content.ts`** (B2) — header note + §Retention now disclose in-app per-meal deletion
+  (removes the meal + its photo); account/bulk deletion stays email-routed.
+- **Verified (static):** `npx tsc --noEmit` PASS; `npx expo lint` exit 0 clean; **web bundle compiles
+  (HTTP 200, ~7.1 MB, no error)** — the renamed `/history` route + new screen/hook/primitive + both tab
+  edits all bundle cleanly on web.
+- **Pending:** interactive web-verify (scenarios 1–8: save → see in History → delete → confirm row +
+  `meal_items` + photo gone; cancel; empty; error/Retry) by the user in a logged-in browser session, as
+  with 0011 Layer 1. Real-device `Alert.alert` pass deferred (bundles with the 0007 device session).
