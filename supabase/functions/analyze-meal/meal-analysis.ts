@@ -200,70 +200,59 @@ export function isNoFood(a: MealAnalysis): boolean {
 }
 
 /**
- * Gemini `responseSchema` (a SUBSET of JSON Schema — no `$ref`, uppercase type
- * names, ordering via `propertyOrdering`). `totals` is intentionally omitted —
- * we recompute it server-side. `quality`/`assumptions` are optional (not in
- * `required`) so the model may omit them.
+ * OpenAI **Structured Outputs** schema (a strict, standard JSON Schema —
+ * supports nesting, so `items[].nutrients` needs no flattening). Strict mode
+ * requires EVERY property to appear in `required` and `additionalProperties:
+ * false` on every object; optional fields are modelled as nullable
+ * (`type: ["object","null"]`) and `coerceMealAnalysis` tolerates null/empty.
+ * `totals` is intentionally omitted — we recompute it server-side.
  */
-export const GEMINI_RESPONSE_SCHEMA = {
-  type: "OBJECT",
+const NUTRIENTS_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
   properties: {
-    dishName: { type: "STRING" },
-    confidence: { type: "STRING", enum: ["low", "medium", "high"] },
+    calories: { type: "number" },
+    protein: { type: "number" },
+    carbs: { type: "number" },
+    fat: { type: "number" },
+    sugar: { type: "number" },
+    fiber: { type: "number" },
+    sodium: { type: "number" },
+  },
+  required: ["calories", "protein", "carbs", "fat", "sugar", "fiber", "sodium"],
+} as const;
+
+export const OPENAI_RESPONSE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    dishName: { type: "string" },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
     items: {
-      type: "ARRAY",
+      type: "array",
       items: {
-        type: "OBJECT",
+        type: "object",
+        additionalProperties: false,
         properties: {
-          name: { type: "STRING" },
-          portion: { type: "STRING" },
-          estimatedGrams: { type: "NUMBER" },
-          nutrients: {
-            type: "OBJECT",
-            properties: {
-              calories: { type: "NUMBER" },
-              protein: { type: "NUMBER" },
-              carbs: { type: "NUMBER" },
-              fat: { type: "NUMBER" },
-              sugar: { type: "NUMBER" },
-              fiber: { type: "NUMBER" },
-              sodium: { type: "NUMBER" },
-            },
-            propertyOrdering: [
-              "calories",
-              "protein",
-              "carbs",
-              "fat",
-              "sugar",
-              "fiber",
-              "sodium",
-            ],
-            required: [
-              "calories",
-              "protein",
-              "carbs",
-              "fat",
-              "sugar",
-              "fiber",
-              "sodium",
-            ],
-          },
+          name: { type: "string" },
+          portion: { type: "string" },
+          estimatedGrams: { type: "number" },
+          nutrients: NUTRIENTS_SCHEMA,
         },
-        propertyOrdering: ["name", "portion", "estimatedGrams", "nutrients"],
         required: ["name", "portion", "estimatedGrams", "nutrients"],
       },
     },
+    // Nullable so the model may legitimately omit a quality judgement.
     quality: {
-      type: "OBJECT",
+      type: ["object", "null"],
+      additionalProperties: false,
       properties: {
-        score: { type: "NUMBER" },
-        factors: { type: "ARRAY", items: { type: "STRING" } },
+        score: { type: "number" },
+        factors: { type: "array", items: { type: "string" } },
       },
-      propertyOrdering: ["score", "factors"],
       required: ["score", "factors"],
     },
-    assumptions: { type: "ARRAY", items: { type: "STRING" } },
+    assumptions: { type: "array", items: { type: "string" } },
   },
-  propertyOrdering: ["dishName", "confidence", "items", "quality", "assumptions"],
-  required: ["dishName", "confidence", "items"],
+  required: ["dishName", "confidence", "items", "quality", "assumptions"],
 } as const;

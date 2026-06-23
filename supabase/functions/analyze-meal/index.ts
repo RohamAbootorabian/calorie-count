@@ -8,8 +8,8 @@
  *   2. confirms ownership by reading the image through the CALLER'S client so
  *      the bucket RLS (`foldername[1] = auth.uid()`) is the load-bearing
  *      authorization (never the regex; we never use the service-role key),
- *   3. bounds per-user daily cost (B6), downloads the bytes, calls Gemini
- *      2.5 Flash (vision) with structured output, validates/coerces the JSON
+ *   3. bounds per-user daily cost (B6), downloads the bytes, calls OpenAI
+ *      (GPT-4o vision) with structured output, validates/coerces the JSON
  *      into a `MealAnalysis`, and returns it.
  *
  * ERROR CONTRACT (B1): this ALWAYS returns HTTP 200 with `{ ok, kind }` for
@@ -19,20 +19,20 @@
  *
  * LOGGING DISCIPLINE: SAFE = error kind, status, coarse timing. FORBIDDEN =
  * path/uid, the Authorization header/JWT, photo bytes/base64, any signed URL,
- * the parsed MealAnalysis (health data), and the raw Gemini response body.
+ * the parsed MealAnalysis (health data), and the raw OpenAI response body.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
 import { corsHeaders, handlePreflight } from "../_shared/cors.ts";
-import { analyzeWithGemini } from "./gemini.ts";
+import { analyzeWithOpenAI } from "./openai.ts";
 import { isNoFood } from "./meal-analysis.ts";
 
 const BUCKET = "meal-photos";
 const MAX_BYTES = 10 * 1024 * 1024; // matches the bucket's 10 MB cap.
 const DOWNLOAD_TIMEOUT_MS = 15_000; // → `network`
-const GEMINI_TIMEOUT_MS = 30_000; //  → `timeout` (client withTimeout is ~35 s)
+const AI_TIMEOUT_MS = 30_000; //      → `timeout` (client withTimeout is ~35 s)
 const DAILY_CAP = 50; // analyses per user per day (B6). Tune from real usage.
 
 /** Exhaustive typed outcomes (mirrors the client helper's union). */
@@ -93,11 +93,11 @@ Deno.serve(async (req) => {
 
   try {
     // --- Config (server-only secrets) -------------------------------------
-    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    const openaiKey = Deno.env.get("OPENAI_API_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    if (!geminiKey) {
-      console.error("missing GEMINI_API_KEY"); // value never logged.
+    if (!openaiKey) {
+      console.error("missing OPENAI_API_KEY"); // value never logged.
       return fail(origin, "unknown");
     }
     if (!supabaseUrl || !anonKey) {
@@ -156,20 +156,20 @@ Deno.serve(async (req) => {
     // NULL → already at/over the cap (the rpc didn't increment).
     if (usageCount === null) return fail(origin, "rate_limited");
 
-    // --- Call Gemini with its own abort-timeout (B4) ----------------------
+    // --- Call OpenAI with its own abort-timeout (B4) ----------------------
     const base64 = encodeBase64(new Uint8Array(buffer));
     const controller = new AbortController();
-    const geminiTimer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    const aiTimer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
     let result;
     try {
-      result = await analyzeWithGemini({
-        apiKey: geminiKey,
+      result = await analyzeWithOpenAI({
+        apiKey: openaiKey,
         base64,
         mimeType,
         signal: controller.signal,
       });
     } finally {
-      clearTimeout(geminiTimer);
+      clearTimeout(aiTimer);
     }
 
     if (!result.ok) return fail(origin, result.kind);

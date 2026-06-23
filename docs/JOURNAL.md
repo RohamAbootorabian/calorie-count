@@ -628,3 +628,19 @@ origins** chosen at execution (prod origin left as a TODO in `cors.ts`).
 `supabase/.env.local`) → `supabase functions serve` negative/positive matrix → `supabase
 functions deploy analyze-meal --project-ref vldpfoczswakghkrkyrm` → web end-to-end verify (the
 Done gate) → mark plan 0008 Done. Then piece 3 (editable results + save to `meal_logs`/`meal_items`).
+
+### Session 9 (cont.) — 2026-06-23 · Provider switch: Gemini → OpenAI (GPT-4o vision)
+Mid-execution of plan 0008 the user chose to switch the AI provider from Gemini to **OpenAI**,
+because they already hold an OpenAI account **with billing/credit**. This is a clean win, not just
+convenience: OpenAI's **API doesn't train on submitted data by default**, which resolves B5 (the
+free-Gemini-tier privacy risk) without any "which tier?" footgun; and OpenAI **Structured Outputs**
+use a strict standard JSON Schema that supports nesting, retiring the open `responseSchema`-
+flattening question. Blast radius was contained because the Edge boundary was already provider-
+agnostic: only `gemini.ts → openai.ts`, the response-schema *format* (`GEMINI_RESPONSE_SCHEMA →
+OPENAI_RESPONSE_SCHEMA`, strict: every prop required + `additionalProperties:false`, `quality`
+nullable), the secret name (`GEMINI_API_KEY → OPENAI_API_KEY`), and the CLAUDE.md stack line
+changed. `index.ts` (auth/RLS/timeouts/always-200), `meal-analysis.ts` coercion/clamps, the
+migration, the client helper, and the Capture screen are unchanged. Model: `gpt-4o-mini` (cheap;
+bump to `gpt-4o` if quality is weak). Plan 0008 Execution log updated with the divergence + why.
+All gates green (tsc, expo lint, deno check). **Deploy + web verify are now un-blocked** — next:
+set `OPENAI_API_KEY` secret → deploy → verify on web → mark plan Done.

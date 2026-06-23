@@ -1,10 +1,11 @@
 # Plan: `analyze-meal` Edge Function — photo → MealAnalysis (S2 · piece 2)
 
-- **Status**: **Executed — code complete & green, NOT Done** (2026-06-22, session 9). All
-  files written per plan; `tsc` / `expo lint` / `deno check` all pass; the `analyze_usage`
-  migration is pushed to remote. **Deploy + web verify are deferred on B5** — the user holds
-  only the free Gemini tier, which must not receive real meal photos. See `## Execution log`.
-  _Prior:_ **Approved** (2026-06-22) — multi-agent review: **6 blockers resolved in-plan**
+- **Status**: **Executing — provider switched to OpenAI, NOT Done** (2026-06-23, session 9). Code
+  complete & green; `analyze_usage` migration pushed. **Mid-execution the AI provider changed
+  Gemini → OpenAI (GPT-4o vision)** — the user has OpenAI billing, and OpenAI's no-training-on-API
+  default resolves B5 (and the `responseSchema` nesting question). Deploy + web verify are now
+  **un-blocked**; see the latest `## Execution log` entry. _Prior:_ **Approved** (2026-06-22) —
+  multi-agent review: **6 blockers resolved in-plan**
   (error contract returns 200+typed body; eslint must ignore Deno; Gemini truncation/empty-
   candidate guarding; reconciled download/Gemini/client timeouts; paid Gemini tier + privacy;
   per-user daily cost cap). All should-fixes folded in; all open questions decided. Ready to
@@ -443,6 +444,44 @@ edge cases 3, data/privacy 2.
   adds a second function).
 
 ## Execution log
+
+### 2026-06-23 (session 9 cont.) — PROVIDER CHANGE: Gemini → OpenAI (GPT-4o vision)
+**Plan divergence, logged per the workflow.** Mid-execution the user opted to switch the AI
+provider from **Gemini 2.5 Flash** to **OpenAI (GPT-4o-class vision)**, because they already hold
+an OpenAI account **with billing/credit** (the Gemini blocker was only ever the *free-tier*
+privacy risk, B5).
+
+**Why this is a good swap (not just convenient):**
+- **Resolves B5 cleanly.** The OpenAI **API does not train on submitted data by default** (it's
+  the API-wide default, not a special tier) — so health-adjacent meal photos are not used for
+  training, which was the entire reason Gemini needed a paid tier. No "which tier?" footgun.
+- **Resolves the open `responseSchema` nesting question.** OpenAI **Structured Outputs** use a
+  standard (strict) JSON Schema that fully supports nested objects, so `items[].nutrients` needs
+  no flattening (Gemini's schema is a lossy subset — that risk is gone).
+- **Contained blast radius.** The architecture was already provider-agnostic at the Edge boundary,
+  so ONLY the provider module + secret name + schema *format* change. `index.ts` (auth/RLS/
+  timeouts/always-200 contract), `meal-analysis.ts` coercion/clamps, the migration, the client
+  helper, and the Capture screen are **unchanged**.
+
+**What changed for the swap:**
+- `gemini.ts` → **`openai.ts`** — `POST https://api.openai.com/v1/chat/completions`, `Authorization:
+  Bearer`, vision via an `image_url` data-URL part, `response_format: { type:"json_schema", strict }`.
+  `finish_reason !== "stop"` (length/content_filter) or a `message.refusal` → `bad_ai_response`;
+  same null-guarding; `429`→`rate_limited` (covers `insufficient_quota`), `401`→`unknown`
+  ("service unavailable", key never logged), `5xx`→`network`. Model: **`gpt-4o-mini`** (cheap,
+  mirrors the "flash" intent; bump to `gpt-4o` if estimation quality is weak).
+- `meal-analysis.ts`: `GEMINI_RESPONSE_SCHEMA` → **`OPENAI_RESPONSE_SCHEMA`** (strict JSON Schema:
+  every prop `required` + `additionalProperties:false`; `quality` made nullable; `totals` still
+  omitted/recomputed). `coerceMealAnalysis`/`isNoFood` unchanged.
+- `index.ts`: env var **`OPENAI_API_KEY`** (was `GEMINI_API_KEY`); import + call site updated;
+  timeout constant renamed `AI_TIMEOUT_MS` (30 s). The data-tier privacy header now cites OpenAI's
+  no-training-on-API-data policy.
+- `CLAUDE.md` stack line + architecture rule updated to "OpenAI (GPT-4o vision)".
+- B5 in the privacy/obligations sense is **satisfied** (no-training default); the privacy-policy
+  obligation now reads "meal photos + derived nutrition are sent to **OpenAI** for analysis."
+
+**Deploy/verify now UN-blocked** (the user has OpenAI credit): set `OPENAI_API_KEY` secret +
+`supabase/.env.local` → `functions serve` matrix → `deploy` → web verify → mark Done.
 
 ### 2026-06-22 (session 9) — code complete + green; deploy/verify deferred on B5
 All code for piece 2 written **strictly per the approved plan** and passing every
