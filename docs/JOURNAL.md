@@ -665,3 +665,32 @@ Next session: **piece 3** — editable results UI + persist to `meal_logs`/`meal
 relies on this piece's coercion/clamps + NaN-stripping). Tracked obligations still open: privacy
 policy must disclose meal photos + nutrition go to **OpenAI**; 0007 SF9 storage-lifecycle/orphan
 cleanup. CORS prod origin is still a TODO in `cors.ts` (only Expo web dev origins allowed today).
+
+### Session 9 (cont.) — 2026-06-23 · Plan 0009 (meal review & save, S2 piece 3) drafted + reviewed + Approved
+With plan 0008 Done and verified, drafted **plan 0009** (review/edit the AI analysis → atomically save
+one `meal_logs` + N `meal_items` rows) and ran the 4-lens multi-agent review. **3 blockers, all
+resolved in-plan; Approved, not executed.**
+
+- **B1 — RPC SQL wouldn't run:** jsonb needs `->>` + explicit casts, and `with ordinality` needs an
+  alias. Folded the spelled-out parent/child inserts into the plan.
+- **B2 — the RPC is the security boundary, not the client.** It's `SECURITY INVOKER` and directly
+  callable with crafted jsonb, so it now reads an explicit **column allowlist**, sets
+  `user_id:=auth.uid()` / `verified:=true` / `meal_log_id` / `position` as **server literals** (never
+  from the payload), validates `image_path`'s first segment `= auth.uid()`, and guards item count `1..50`.
+- **B3 — `image_path` UNIQUE conflict broke the lost-ack retry** (a committed-but-unacked save would
+  show an error on retry). Made the save **idempotent**: `on conflict (image_path) do nothing` → return
+  the existing owned row's id as success.
+- **Should-fixes folded:** RPC `withTimeout` (20 s → `network`); error mapping **by `PostgrestError.code`
+  only, never logging message/details** (PII); totals **reject (not silently clamp)** when over a DB cap
+  so `total ≠ sum(items)` can't be stored; `recomputeTotals` on the shared `sumNutrients`; `MealReview`
+  lives at `screens/meal-review.tsx` (no new `components/` dir) and is `key`ed by `uploadedPath` for
+  re-pick-mid-save teardown; `quality_score` rounded to int + null-safe optional fields.
+- **Dismissed "blocker":** `.rpc('create_meal_log')` won't typecheck — false; `src/lib/supabase.ts`
+  builds the client **without** the `<Database>` generic (untyped), so `.rpc` returns `any` and compiles.
+  We cast the result; no type regen needed. (Typing the client is a possible future cleanup.)
+
+Decided all 6 open questions: edit headline cals+macros only (carry the rest); `eaten_at` defaults
+`now()`; RPC (not client two-step); reset-to-capture after save; keep the unique constraint + idempotent
+RPC; persist quality/assumptions read-only. **Gotcha for execution:** an empty-`search_path` resolution
+failure only surfaces when the RPC is actually *called* (not on `db push`) — the verify plan calls it as
+a signed-in user.
