@@ -2,8 +2,9 @@
  * Capture screen (plan 0007 piece 1 + plan 0008 piece 2). The product core:
  * take **or** pick a meal photo → preview → upload to the private
  * `meal-photos/{uid}/…` bucket → **Analyze** it through the `analyze-meal` Edge
- * Function (phone NEVER calls Gemini directly) → show a read-only result card
- * (dish, totals, confidence, quality). No DB write yet (piece 3 persists/edits).
+ * Function (phone NEVER calls Gemini directly) → an editable **review** card
+ * (`MealReview`, piece 3) where the user corrects the estimate and **saves** it
+ * to `meal_logs`/`meal_items` via the atomic `create_meal_log` RPC.
  *
  * Retry discipline (B3): both helpers return a typed `kind`; we offer a bare
  * **Retry** only for transient kinds, and analysis retries are **bounded**
@@ -30,6 +31,7 @@ import {
   type PickedPhoto,
 } from '../lib/pick-photo';
 import { uploadMealPhoto, type UploadErrorKind } from '../lib/upload-meal-photo';
+import { MealReview } from './meal-review';
 
 /** A malformed-AI / transient loop is real paid spend — cap manual retries. */
 const MAX_ANALYZE_ATTEMPTS = 3;
@@ -244,7 +246,12 @@ export function CaptureScreen() {
               </Text>
 
               {analysis ? (
-                <AnalysisResult analysis={analysis} />
+                <MealReview
+                  key={uploadedPath ?? 'none'}
+                  analysis={analysis}
+                  imagePath={uploadedPath}
+                  onLogAnother={chooseAnother}
+                />
               ) : (
                 <>
                   {analyzeError ? (
@@ -295,43 +302,6 @@ export function CaptureScreen() {
   );
 }
 
-/** Read-only summary of an analysis — the piece-2 verify surface (piece 3 edits). */
-function AnalysisResult({ analysis }: { analysis: MealAnalysis }) {
-  const { dishName, totals, confidence, quality } = analysis;
-  return (
-    <View style={styles.result}>
-      <Text type="subtitle">{dishName}</Text>
-      <Text type="small" themeColor="textSecondary">
-        Confidence: {confidence}
-        {quality ? ` · Quality ${Math.round(quality.score)}/100` : ''}
-      </Text>
-
-      <View style={styles.macroRow}>
-        <Macro label="Calories" value={`${Math.round(totals.calories)}`} />
-        <Macro label="Protein" value={`${Math.round(totals.protein)} g`} />
-        <Macro label="Carbs" value={`${Math.round(totals.carbs)} g`} />
-        <Macro label="Fat" value={`${Math.round(totals.fat)} g`} />
-      </View>
-
-      <Text type="small" themeColor="textSecondary">
-        {analysis.items.length} item{analysis.items.length === 1 ? '' : 's'} · review &amp; save
-        coming soon
-      </Text>
-    </View>
-  );
-}
-
-function Macro({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.macro}>
-      <Text type="smallBold">{value}</Text>
-      <Text type="small" themeColor="textSecondary">
-        {label}
-      </Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   header: {
     marginBottom: Spacing.four,
@@ -345,18 +315,5 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 1,
     borderRadius: Radius.md,
-  },
-  result: {
-    gap: Spacing.two,
-  },
-  macroRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-  },
-  macro: {
-    flex: 1,
-    alignItems: 'center',
-    gap: Spacing.one,
   },
 });

@@ -1,6 +1,8 @@
 # Plan: Review, edit & save a meal — analysis → `meal_logs`/`meal_items` (S2 · piece 3)
 
-- **Status**: **Approved** (2026-06-23) — multi-agent review: **3 blockers resolved in-plan** (RPC
+- **Status**: **Done** (2026-06-23) — executed per plan, `tsc` + `expo lint` clean, web-verified
+  end-to-end (edit dish/macros → live totals → remove item → Save → Saved ✓; field errors gate Save).
+  Was: **Approved** (2026-06-23) — multi-agent review: **3 blockers resolved in-plan** (RPC
   jsonb/ordinality SQL spelled out; the RPC validates/allowlists its own input as the security
   boundary; save made idempotent on `image_path` so a lost-ack retry returns success). All should-fixes
   folded in. One "won't typecheck" blocker dismissed (the client is untyped). Ready to execute.
@@ -382,5 +384,32 @@ possible future cleanup, out of scope.)
   locally. No secret/cost leak (pure DB write, no AI, no service-role).
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+**2026-06-23 (session 10) — executed as planned, no material deviations.**
+
+- **Migration** `20260623132156_create_meal_log.sql` — the `create_meal_log(p_log jsonb, p_items
+  jsonb)` RPC exactly per §Data model: `SECURITY INVOKER`, `set search_path = ''`, guards
+  (`28000` no-auth / `23514` item-count `1..50` / `23514` image_path-namespace), allowlisted +
+  server-set parent insert, idempotent `on conflict (image_path) do nothing` → return existing
+  owned id, aliased `with ordinality as t(e, ord)` child insert, `revoke … / grant execute … to
+  authenticated`. `supabase db push` applied it cleanly.
+- **`lib/meal-form.ts`** — `MAX_*` bounds mirroring the DB checks, `seedFormFromAnalysis`
+  (editable numerics as strings, carry-through fields as numbers), `parseNumber`-reusing validators,
+  `recomputeTotals` on the shared `sumNutrients`, `totalsWithinCaps`, `toSavePayload(form, imagePath)`
+  (recomputes totals so `total = sum(items)`; rounds `quality_score`; null-safe quality/assumptions).
+- **`lib/save-meal.ts`** — `withTimeout` 20 s → `network`; maps **by `error.code` only** (`23505`→
+  conflict, `23514/23502/22P02`→invalid, `28000/42501`→unauthorized, else unknown); logs only the
+  typed kind. Cast the untyped-client `any` result to a string id.
+- **`screens/meal-review.tsx`** — `MealReview`: seeded form, live totals + over-cap message, per-item
+  `Input` rows (name + cal/protein/carbs/fat, decimal-pad) with inline validation, remove (kept ≥1),
+  double-tap + `mounted` guards, `conflict`-as-success → **Saved ✓ / Log another**.
+- **`screens/capture-screen.tsx`** — swapped the read-only `AnalysisResult` (+ `Macro`, dead styles
+  removed) for `<MealReview key={uploadedPath ?? 'none'} … />`.
+
+**Deviations:** (1) `supabase.rpc()` returns a thenable builder, not a `Promise` — wrapped it in
+`Promise.resolve(...)` so the `withTimeout` race typechecks (runtime behavior unchanged). (2) Dropped
+two unused imports in `meal-review.tsx` (the validators are used transitively via `validateItem`).
+Neither changes the design.
+
+**Verify result:** `npx tsc --noEmit` ✅, `npx expo lint` ✅ (exit 0). **Web-verified** by the user
+end-to-end: editable review renders, dish/macro edits recompute totals live, remove updates totals,
+empty/invalid field gates Save, Save → **Saved ✓**. S2 piece 3 **Done** → S2 complete.

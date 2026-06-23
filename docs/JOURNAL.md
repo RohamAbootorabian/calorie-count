@@ -694,3 +694,33 @@ Decided all 6 open questions: edit headline cals+macros only (carry the rest); `
 RPC; persist quality/assumptions read-only. **Gotcha for execution:** an empty-`search_path` resolution
 failure only surfaces when the RPC is actually *called* (not on `db push`) — the verify plan calls it as
 a signed-in user.
+
+### Session 10 — 2026-06-23 · Plan 0009 executed & web-verified — meal review/save (S2 piece 3) DONE
+Executed plan 0009 as written; **S2 (Capture & AI Analysis) is now complete end-to-end** — a user can
+shoot a meal, analyze it, **correct the estimate, and persist it** as an owned, queryable record.
+
+- **`create_meal_log` RPC** (migration `20260623132156`, `db push`ed) is the atomic, idempotent,
+  self-validating save: `SECURITY INVOKER` + `search_path=''` so RLS applies; parent + children in one
+  transaction (no orphan on partial failure); reads an explicit **column allowlist** and sets
+  `user_id/verified/meal_log_id/position` as server literals (crafted jsonb can't smuggle them);
+  validates `image_path` lives in the caller's `${uid}/…` namespace; guards item count `1..50`;
+  idempotent `on conflict (image_path) do nothing` → returns the existing owned id so a lost-ack retry
+  reads as success, not a `unique_violation` dead-end.
+- **Client:** `meal-form.ts` (pure model — string-typed editable numerics, DB-mirroring validators on
+  the shared `parseNumber`, `recomputeTotals` on `sumNutrients`, `toSavePayload` recomputing totals so
+  `total = sum(items)`); `save-meal.ts` (`withTimeout` 20 s; maps **by `PostgrestError.code` only** and
+  logs **only the typed kind** — `message/details` can echo health PII); `meal-review.tsx` (editable
+  card, live totals + over-cap reject, inline field errors gating Save, `conflict`→**Saved ✓**).
+- **Why an RPC, not two client inserts:** a client "insert log → insert items" leaves an orphan parent
+  if the items insert fails midway and costs two round-trips. The RPC makes it atomic + halves latency,
+  and `SECURITY INVOKER` keeps RLS as the authorization (no service-role) — consistent with analyze.
+- **Two small execution deviations (logged in the plan):** `supabase.rpc()` returns a thenable builder,
+  not a Promise, so the `withTimeout` race needed a `Promise.resolve(...)` wrap to typecheck (runtime
+  unchanged); and two transitively-used imports were dropped from `meal-review.tsx`. Neither altered the
+  design. **Verify:** `tsc` + `expo lint` clean; user web-verified the full edit→remove→Save→Saved flow.
+- **Tracked obligations unchanged & still open:** privacy policy must disclose meal photos + nutrition
+  go to **OpenAI**; CORS prod origin TODO in `_shared/cors.ts`; 0007 SF9 storage orphan cleanup; custom
+  SMTP. **Carry-through drift** (edited macros vs carried sugar/fiber) is the named v1 follow-up.
+
+**Next: S3** — a meals history/list + day totals reading the `meal_logs`/`meal_items` rows this piece
+now writes.
