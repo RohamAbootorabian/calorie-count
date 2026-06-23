@@ -790,3 +790,39 @@ saved to a `meal_logs.image_path` row). User chose the **two-layer** strategy: c
 
 **Session 10 net:** shipped plans **0009** (meal review/save → S2 complete) and **0010** (in-app privacy
 policy) end-to-end; drafted + reviewed **0011** (left at NEEDS CHANGES for next session).
+
+### Session 11 — 2026-06-24 · Plan 0011 folded → APPROVED; Layer 1 (client delete-on-abandon) shipped
+Resumed plan 0011 (orphan meal-photo cleanup). Two units of work this session.
+
+**1. Folded the review into the plan body (NEEDS CHANGES → APPROVED).** The 4 blockers + should-fixes
+were woven into approach / data-model / edge-cases / verify / rollout with `(resolves Bn)` / `(SF)`
+markers (not just left in `## Review`):
+- **B1** — record do-not-delete at save **initiation**, not on the success ack (an unmount between RPC
+  commit and ack would otherwise lose the mark and let a later abandon delete a genuinely saved photo).
+- **B2** — the sweep must fail **closed**: abort on a degraded `image_path` read, per-folder containment,
+  a delete circuit-breaker (cap/% of scanned), and an observe-only (`DRY_RUN`) first run.
+- **B3** — the cron command reads the secret as a **live Vault subquery**, never a baked literal, so
+  `cron.job.command` / `pg_net` never hold plaintext.
+- **B4** — the Edge Function is justified (raw `delete from storage.objects` does NOT reclaim the S3
+  blob → Storage API `.remove()` required) but must be confirmed empirically; the function URL is not a
+  secret (inline, no Vault entry); confirm pg_cron/pg_net enable before the migration.
+- Should-fixes folded: grace 24h → **72h** + save tolerates a vanished blob; TOCTOU re-check before
+  `.remove()` + single-run lock; page BOTH `list('')` and each `list('{uid}')`; byte-identical key
+  match; one `maybeDeleteAbandoned()` helper; self rate-limit; inspect `.remove()` partials.
+
+**2. Built + shipped Layer 1 (client delete-on-abandon).**
+- NEW `src/features/capture/lib/delete-meal-photo.ts` — best-effort `deleteMealPhoto(path): Promise<void>`,
+  never throws/blocks, message-only logging (no PII), uses the existing owner-scoped DELETE policy.
+- EDIT `meal-review.tsx` — new `onSaving?(path)` prop fired the instant the save RPC is dispatched (B1).
+- EDIT `capture-screen.tsx` — `savedPath` ref + a single guarded `maybeDeleteAbandoned(prior)` helper.
+- **Deviation from the planned hook sites (documented in the plan's Execution log).** The plan named
+  `handleUpload` (re-upload) + `chooseAnother`. Reality: the two pick buttons stay enabled after upload,
+  so a **fresh pick** while an uploaded-unsaved path exists is a real abandon — and `applyPickOutcome`
+  clears `uploadedPath` without deleting; meanwhile `handleUpload` never sees a prior path (it's already
+  nulled) → that hook was dead code. Corrected to **`applyPickOutcome` + `chooseAnother`**.
+- **Verified:** tsc PASS; expo lint clean; web bundle builds. **User web-verified** cases 1–3: Choose
+  another deletes the orphan; re-pick deletes A and keeps B; **Save → Log another keeps the saved photo**
+  (the B1 guard holds). **Layer 1 DONE.**
+
+**Next:** Layer 2 (scheduled server sweep) — confirm pg_cron/pg_net + the blob-reclaim premise, then
+build the fail-closed `cleanup-orphans` Edge Function + the Vault-subquery cron migration.

@@ -38,6 +38,12 @@ type MealReviewProps = {
   analysis: MealAnalysis;
   imagePath: string | null;
   onLogAnother: () => void;
+  /**
+   * Fired the instant a save RPC is dispatched (plan 0011 B1) so the parent can
+   * mark this path do-not-delete at the irreversible commit point — BEFORE any
+   * unmount between commit and ack could drop a post-success callback.
+   */
+  onSaving?: (path: string) => void;
 };
 
 /** Friendly copy + whether a bare retry can ever succeed, per save error kind. */
@@ -56,7 +62,7 @@ function saveErrorCopy(kind: SaveErrorKind): { message: string; canRetry: boolea
   }
 }
 
-export function MealReview({ analysis, imagePath, onLogAnother }: MealReviewProps) {
+export function MealReview({ analysis, imagePath, onLogAnother, onSaving }: MealReviewProps) {
   const [form, setForm] = useState<MealForm>(() => seedFormFromAnalysis(analysis));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
@@ -98,6 +104,10 @@ export function MealReview({ analysis, imagePath, onLogAnother }: MealReviewProp
     setSaving(true);
     setSaveError(undefined);
     setSaveCanRetry(false);
+
+    // B1: mark do-not-delete at save *initiation* (the irreversible commit point),
+    // not on the success ack — an unmount before the ack must not lose the mark.
+    if (imagePath) onSaving?.(imagePath);
 
     const payload = toSavePayload(form, imagePath);
     const result = await saveMeal({ payload });

@@ -24,6 +24,7 @@ import { Button, Card, Screen, Text } from '@/shared/ui';
 import type { MealAnalysis } from '@/types/nutrition';
 
 import { analyzeMeal, type AnalyzeErrorKind } from '../lib/analyze-meal';
+import { deleteMealPhoto } from '../lib/delete-meal-photo';
 import {
   pickFromLibrary,
   takePhoto,
@@ -106,12 +107,27 @@ export function CaptureScreen() {
   // Tracks the path currently in play so a late analyze result for a stale
   // (re-picked / re-uploaded) photo is ignored.
   const currentPath = useRef<string | null>(null);
+  // Plan 0011 B1: a path a Save was *initiated* for — never delete it on a later
+  // abandon. Set at save initiation (via MealReview's onSaving), not on the ack,
+  // so an unmount between commit and ack can't lose the mark.
+  const savedPath = useRef<string | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+
+  /**
+   * Plan 0011 (Layer 1): best-effort delete the prior uploaded photo when it's
+   * being abandoned. Single guarded helper so no abandon site can forget the
+   * guard: no-op unless a prior path exists AND it isn't a path a Save was
+   * initiated for (savedPath). Fire-and-forget; the sweep is the backstop.
+   */
+  function maybeDeleteAbandoned(prior: string | null) {
+    if (!prior || prior === savedPath.current) return;
+    void deleteMealPhoto(prior);
+  }
 
   /** Clear all analyze-side state (on fresh pick / new upload / choose another). */
   function resetAnalyze() {
@@ -129,6 +145,8 @@ export function CaptureScreen() {
       return;
     }
     // Fresh pick → reset any prior result/error and preview the new photo.
+    // If a prior unsaved photo was already uploaded, abandon-delete it first.
+    maybeDeleteAbandoned(uploadedPath);
     setPhoto(outcome.photo);
     setUploadedPath(null);
     currentPath.current = null;
@@ -198,6 +216,9 @@ export function CaptureScreen() {
   }
 
   function chooseAnother() {
+    // Also the post-save reset (onLogAnother). The savedPath guard makes this a
+    // no-op for a just-saved photo; only a genuinely abandoned upload is deleted.
+    maybeDeleteAbandoned(uploadedPath);
     setPhoto(null);
     setUploadedPath(null);
     currentPath.current = null;
@@ -265,6 +286,9 @@ export function CaptureScreen() {
                   analysis={analysis}
                   imagePath={uploadedPath}
                   onLogAnother={chooseAnother}
+                  onSaving={(path) => {
+                    savedPath.current = path;
+                  }}
                 />
               ) : (
                 <>
