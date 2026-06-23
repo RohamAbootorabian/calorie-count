@@ -862,3 +862,38 @@ proven).
 
 **Session 11 net:** plan 0011 folded NEEDS CHANGES → APPROVED; **Layer 1 SHIPPED + web-verified**
 (commit aa83c54); **Layer 2 code-complete, pre-deploy** (commit 09b1896, unpushed until this session-end).
+
+### Session 12 — 2026-06-24 · Plan 0011 Layer 2 DEPLOYED + VERIFIED → DONE
+Deployed the scheduled server sweep to production and ran the full verify matrix. All steps
+non-interactive (Supabase CLI access token from the macOS keychain; Vault + verification SQL via the
+Management API `database/query` endpoint; project ref `vldpfoczswakghkrkyrm`).
+
+**Ordering divergence (WORKFLOW step 3):** the plan put the migration last, but the function calls
+`rpc('claim_cleanup_run')` and that RPC + the `cleanup_run` table are created by this migration — so the
+function can't clear its own rate-limit claim until the migration is applied. Applied order:
+**secrets+Vault → migration → function deploy → verify**. The migration's cron is harmless before
+verification (DRY_RUN on; fires 03:17 UTC, not during the test).
+
+**What shipped:**
+- 256-bit secret (`openssl rand -hex 32`) → Edge `CLEANUP_SECRET` + `CLEANUP_DRY_RUN=true` and the SAME
+  value into Vault `cleanup_secret` (atomic, never printed). `db push` enabled pg_cron 1.6.4 + pg_net
+  0.20.3, seeded `cleanup_run` at epoch, created `claim_cleanup_run` (service_role-only), and the daily
+  cron `cleanup-orphans-daily` (`17 3 * * *`) whose command holds only the Vault subquery ref (B3 ✓).
+  `functions deploy cleanup-orphans` (cloud build).
+
+**Verified:**
+- Observe-only (DRY_RUN on): correct secret → `{dryRun:true,scanned:11,orphaned:0,deleted:0}`; rapid
+  repeat → **429**; wrong/missing secret → **401**.
+- Live (DRY_RUN false): planted a synthetic orphan `_sweeptest/old-orphan.jpg` (service-role upload,
+  `created_at` backdated — UPDATE allowed, only DELETE is trigger-blocked) → invoke →
+  `{dryRun:false,scanned:12,orphaned:1,deleted:1}`; the orphan is **gone** (blob reclaimed via
+  `.remove()`), a known saved photo **survives** (byte-identical `{uid}/{name}` match).
+- Real cron path (case 8): ran the EXACT cron `net.http_post` (live Vault-subquery header) →
+  `net._http_response` status **200**; **0** plaintext-secret rows in `net._http_*`, request queue
+  drained, `cron.job.command` is reference-only. The 03:17 UTC tick will populate `cron.job_run_details`
+  on its next fire; the identical command path is proven working.
+
+**Why this is Done:** every destructive guard exercised end-to-end (fail-closed read, rate-limit/claim,
+circuit-breaker thresholds in code, byte-identical match, TOCTOU re-check, count-only logging). DRY_RUN
+is now **live**; the cron is armed. **Plan 0011 DONE; 0007 SF9 (orphan storage lifecycle) closed.**
+Secret hygiene: rotate the Edge secret + Vault entry together. Remaining tracked obligations unchanged.

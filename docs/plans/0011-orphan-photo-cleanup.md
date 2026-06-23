@@ -1,14 +1,13 @@
 # Plan: Orphan meal-photo cleanup — client delete-on-abandon + scheduled server sweep
 
-- **Status**: **APPROVED** (2026-06-24) — the 4 blockers + should-fixes from `## Review` are now
-  **folded into the approach / data-model / edge-cases below** (look for `(resolves Bn)` / `(SF)`
-  markers). The Layer-2 safety redesign (fail-closed + per-folder containment + circuit-breaker +
-  observe-only first run + secret-as-live-subquery) is baked into §Layer 2; **re-confirm it at the
-  start of execution** given the depth. Two facts must be checked empirically **before** the migration
-  is written (they gate the design, not block approval): (i) `pg_cron`/`pg_net` actually enable on this
-  project; (ii) raw `delete from storage.objects` does NOT reclaim the S3 blob (justifies the Edge
-  Function). Build order: **Layer 1 (client) first** — safe, small, de-risks the headline guard. Not
-  yet executed.
+- **Status**: **DONE** (2026-06-24) — **both layers shipped, deployed, and verified.** Layer 1 (client
+  delete-on-abandon) web-verified by the user (cases 1–3). Layer 2 (server sweep) deployed to production
+  and verified: observe-only dry-run (200 / 429 rate-limit / 401), live planted-orphan deletion (deleted
+  the synthetic orphan, left a saved photo + the byte-identical key match intact), and the **real cron
+  command path** (live Vault subquery → `net.http_post` → function returned 200; **no plaintext secret**
+  in `cron.job.command` or `net._http_*`). DRY_RUN is now **false** (live). 0007 SF9 (orphan storage
+  lifecycle) is closed. The 4 review blockers + should-fixes were folded into the body below
+  (`(resolves Bn)` / `(SF)` markers).
 - **Created**: 2026-06-24
 - **Plan #**: 0011
 
@@ -435,9 +434,8 @@ of execution.** Two items remain facts-to-verify-at-execution, not design gaps: 
   bucket-relative `{uid}/{name}` (matches `create_meal_log`'s namespace check), so set-membership is
   sound once the format invariant (above) is pinned.
 
-<!-- Status: APPROVED 2026-06-24 (B1–B4 + should-fixes folded into the body). Re-confirm the revised
-     Layer-2 safety design (fail-closed, containment, circuit-breaker, dry-run, secret-as-subquery)
-     before executing Layer 2. Build Layer 1 (client) first. -->
+<!-- Status: DONE 2026-06-24 (session 12). Both layers shipped + verified in production; DRY_RUN live;
+     cron armed (03:17 UTC); secret in Edge + Vault. 0007 SF9 closed. -->
 
 ## Execution log
 ### 2026-06-24 — Layer 1 (client delete-on-abandon)
@@ -490,3 +488,33 @@ Ran two non-destructive Management-API queries against the live project before w
   the real cron path (`cron.job` + `cron.job_run_details` + no plaintext secret). Then mark **Done**.
   Stopped here at a clean checkpoint (commit `09b1896`) at ~70% context, by user choice, to deploy with
   a fresh budget. **Layer 1 is DONE; Layer 2 is code-complete, pre-deploy.**
+### 2026-06-24 (session 12) — Layer 2 DEPLOYED + VERIFIED → plan DONE
+Deployed Layer 2 to production and ran the full verify matrix. All non-interactive (Supabase CLI token
+in the macOS keychain; Vault/SQL via the Management API query endpoint; project ref `vldpfoczswakghkrkyrm`).
+- **Ordering divergence (documented per WORKFLOW step 3):** the plan's rollout put the migration LAST
+  (step 6), but the function calls `rpc('claim_cleanup_run')` and that RPC + the `cleanup_run` table live
+  in this migration — so the function can't pass its own rate-limit claim until the migration is applied.
+  Applied order was therefore **secrets+Vault → migration → function deploy → verify**. The cron created
+  by the migration is harmless pre-verification (DRY_RUN on; fires 03:17 UTC daily, not during the test).
+- **Secrets:** generated a 256-bit (`openssl rand -hex 32`) secret; set Edge `CLEANUP_SECRET` +
+  `CLEANUP_DRY_RUN=true`, and the SAME value into Vault `cleanup_secret` (one atomic step, value never
+  printed). (A first attempt mis-escaped the Vault JSON; re-set both from a fresh value so Edge == Vault.)
+- **Migration (`supabase db push`):** `pg_cron` 1.6.4 + `pg_net` 0.20.3 enabled; `cleanup_run` seeded at
+  epoch; `claim_cleanup_run` created (service_role-only); cron job `cleanup-orphans-daily` (`17 3 * * *`)
+  created with the command holding only the **Vault subquery reference**, never the secret (B3 ✓).
+- **Function deploy:** `supabase functions deploy cleanup-orphans` (cloud build; local Docker not needed).
+- **Verify — observe-only (DRY_RUN on):** correct secret → `{ok:true,dryRun:true,scanned:11,orphaned:0,
+  deleted:0}`; immediate repeat → **429** (claim rate-limit); wrong secret → **401**; missing → **401**.
+- **Verify — live (DRY_RUN flipped false):** planted a synthetic orphan `_sweeptest/old-orphan.jpg`
+  (uploaded via service role, `created_at` backdated to 2026-06-01 — UPDATE allowed, only DELETE is
+  trigger-blocked), reset the rate-limit, invoked → `{ok:true,dryRun:false,scanned:12,orphaned:1,
+  deleted:1}`. Confirmed: the planted orphan is **gone** (`.remove()` reclaimed the blob), and a known
+  saved photo `9b004a9d…/1782221557314-5fgmr1rx.jpg` **survives** (byte-identical `{uid}/{name}` match).
+- **Verify — real cron path (case 8):** ran the EXACT cron command via the Management API
+  (`net.http_post` with the live Vault-subquery header) → `net._http_response` id=1 shows **status 200**,
+  body `{ok:true,dryRun:false,scanned:11,orphaned:0,deleted:0}`. **No plaintext secret** anywhere in
+  `net._http_response` (0 leak rows) and the request queue is drained (0 rows); `cron.job.command` holds
+  only the subquery reference. The scheduled tick (03:17 UTC) will populate `cron.job_run_details` on its
+  next fire — the identical command path is proven working manually.
+- **End state:** DRY_RUN is **live** (false); cron armed; secret in Edge + Vault (rotate together).
+  **Plan 0011 DONE.** 0007 SF9 closed. Remaining tracked obligations are unchanged (see HANDOFF).
