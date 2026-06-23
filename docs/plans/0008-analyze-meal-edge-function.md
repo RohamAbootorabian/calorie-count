@@ -1,11 +1,11 @@
 # Plan: `analyze-meal` Edge Function — photo → MealAnalysis (S2 · piece 2)
 
-- **Status**: **Executing — provider switched to OpenAI, NOT Done** (2026-06-23, session 9). Code
-  complete & green; `analyze_usage` migration pushed. **Mid-execution the AI provider changed
-  Gemini → OpenAI (GPT-4o vision)** — the user has OpenAI billing, and OpenAI's no-training-on-API
-  default resolves B5 (and the `responseSchema` nesting question). Deploy + web verify are now
-  **un-blocked**; see the latest `## Execution log` entry. _Prior:_ **Approved** (2026-06-22) —
-  multi-agent review: **6 blockers resolved in-plan**
+- **Status**: **DONE — deployed & web-verified** (2026-06-23, session 9). Provider switched
+  Gemini → **OpenAI (GPT-4o-mini vision)**; function deployed; **end-to-end verified on web**
+  (real meal photo → "Grilled Fish with Rice and Soda", medium confidence, quality 70, totals
+  1000 kcal / 65 P / 91 C / 35 F). One CORS fix during verification (missing `x-client-info`).
+  See `## Execution log`. Next: piece 3 (editable results + save to `meal_logs`/`meal_items`).
+  _Prior:_ **Approved** (2026-06-22) — multi-agent review: **6 blockers resolved in-plan**
   (error contract returns 200+typed body; eslint must ignore Deno; Gemini truncation/empty-
   candidate guarding; reconciled download/Gemini/client timeouts; paid Gemini tier + privacy;
   per-user daily cost cap). All should-fixes folded in; all open questions decided. Ready to
@@ -444,6 +444,24 @@ edge cases 3, data/privacy 2.
   adds a second function).
 
 ## Execution log
+
+### 2026-06-23 (session 9 cont.) — DEPLOYED + WEB-VERIFIED → DONE
+Set `OPENAI_API_KEY` secret (user), deployed `analyze-meal`, and **verified the full round-trip
+on web**: a real restaurant meal photo returned **"Grilled Fish with Rice and Soda"**, confidence
+`medium`, quality `70/100`, totals `1000 kcal / 65 P / 91 C / 35 F`, 3 items — rendered by the
+read-only result card. The Done gate is met.
+
+**One deviation fixed during verification — CORS allow-headers.** The first web attempt failed
+with the client's `network` kind in 1–2 s. Root cause: `supabase.functions.invoke` from a browser
+sends `x-client-info` (and `x-supabase-api-version`) on top of `authorization/apikey/content-type`,
+and the browser requires the preflight's `Access-Control-Allow-Headers` to cover **every** requested
+header. `_shared/cors.ts` listed only the first three, so the preflight failed → the browser blocked
+the request → `FunctionsFetchError` → `network`. Diagnosis was isolated by probing the deployed
+function directly (OPTIONS preflight returned 204 + ACAO for `localhost:8081`; an anon-JWT POST
+returned a healthy `200 {ok:false,kind:'unauthorized'}` — so neither a crash nor an origin issue).
+**Fix:** added `x-client-info, x-supabase-api-version` to the allow-headers and redeployed; the
+preflight now echoes them and the browser call succeeds. (Note for future browser-facing functions:
+always allow the supabase-js client headers, not just the obvious three.)
 
 ### 2026-06-23 (session 9 cont.) — PROVIDER CHANGE: Gemini → OpenAI (GPT-4o vision)
 **Plan divergence, logged per the workflow.** Mid-execution the user opted to switch the AI

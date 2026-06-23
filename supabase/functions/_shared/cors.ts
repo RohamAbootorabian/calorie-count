@@ -7,8 +7,10 @@
  * surface — but we still pin an allow-list rather than `*` because this endpoint
  * handles health-adjacent data (B-fix: CORS pinned to known origins, not `*`).
  *
- * Allow-headers are limited to what supabase-js actually sends: `Authorization`
- * (the caller JWT), `apikey` (the anon key), and `Content-Type` (JSON body).
+ * Allow-headers must cover EVERY header `supabase.functions.invoke` sends from a
+ * browser, or the preflight fails and the call surfaces as a `network` error:
+ * `authorization` (caller JWT), `apikey` (anon key), `content-type` (JSON body),
+ * plus supabase-js's own `x-client-info` and `x-supabase-api-version`.
  */
 
 /**
@@ -27,7 +29,8 @@ const ALLOWED_ORIGINS = new Set<string>([
 /** CORS headers for a given request Origin (echoes only allow-listed origins). */
 export function corsHeaders(origin: string | null): Record<string, string> {
   const headers: Record<string, string> = {
-    "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+    "Access-Control-Allow-Headers":
+      "authorization, apikey, content-type, x-client-info, x-supabase-api-version",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     Vary: "Origin",
   };

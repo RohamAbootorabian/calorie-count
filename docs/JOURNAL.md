@@ -644,3 +644,24 @@ migration, the client helper, and the Capture screen are unchanged. Model: `gpt-
 bump to `gpt-4o` if quality is weak). Plan 0008 Execution log updated with the divergence + why.
 All gates green (tsc, expo lint, deno check). **Deploy + web verify are now un-blocked** — next:
 set `OPENAI_API_KEY` secret → deploy → verify on web → mark plan Done.
+
+### Session 9 close — 2026-06-23 · Plan 0008 DEPLOYED + web-verified → DONE
+Set the `OPENAI_API_KEY` secret, deployed `analyze-meal`, and **verified the full round-trip on
+web**: a real meal photo returned "Grilled Fish with Rice and Soda" (medium confidence, quality
+70/100, 1000 kcal / 65 P / 91 C / 35 F, 3 items) in the read-only card. **Plan 0008 → Done.**
+The core architecture rule is now live end-to-end: phone → Edge Function → OpenAI vision →
+structured `MealAnalysis` → phone; the AI key is an Edge secret, never on the device.
+
+**One real bug found & fixed during verification — CORS allow-headers.** The first web attempt
+failed with a fast `network` error. `supabase.functions.invoke` sends `x-client-info` (+
+`x-supabase-api-version`) from the browser, and a preflight blocks unless `Access-Control-Allow-
+Headers` lists every requested header; `_shared/cors.ts` had only `authorization/apikey/content-
+type`. Diagnosed by probing the deployed function directly (healthy preflight + healthy anon-JWT
+POST ruled out a crash/origin issue), then added the two headers and redeployed. **Lesson for
+future browser-facing functions:** allow the supabase-js client headers, not just the obvious three.
+
+**S2 status:** piece 1 (capture+upload) Done; **piece 2 (analyze-meal) Done & web-verified**.
+Next session: **piece 3** — editable results UI + persist to `meal_logs`/`meal_items` (the insert
+relies on this piece's coercion/clamps + NaN-stripping). Tracked obligations still open: privacy
+policy must disclose meal photos + nutrition go to **OpenAI**; 0007 SF9 storage-lifecycle/orphan
+cleanup. CORS prod origin is still a TODO in `cors.ts` (only Expo web dev origins allowed today).
