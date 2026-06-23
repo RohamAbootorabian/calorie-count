@@ -3,60 +3,59 @@
 
 # Handoff → Next Session
 
-_Last updated: 2026-06-23 (session 9)_
+_Last updated: 2026-06-24 (session 10)_
 
 ## Where we are
-**S2 (Capture & AI Analysis): pieces 1 & 2 are DONE and live; piece 3 is planned & Approved, not
-executed.** A signed-in user can take/pick a meal photo → upload it → **Analyze** it through the
-deployed `analyze-meal` Edge Function → see a read-only result card. The AI provider is **OpenAI
-(GPT-4o-mini vision)** (switched from Gemini this session). Tree is clean, `tsc` + `expo lint` + `deno
-check` all pass.
+**S2 (Capture & AI Analysis) is COMPLETE and live** — a user can shoot/pick a meal photo → upload →
+analyze (OpenAI GPT-4o-mini vision) → **review/edit** the estimate → **Save** it as `meal_logs` +
+`meal_items` rows. An **in-app privacy policy** ships at `/privacy`. The next feature in flight is
+**plan 0011 (orphan-photo cleanup)** — drafted + reviewed, but **NEEDS CHANGES (4 blockers), not yet
+executed.** Tree is clean, `npx tsc --noEmit` passes.
 
 ## What changed this session
-- **Executed plan 0008** (analyze-meal Edge Function): tooling guards, `analyze_usage` cap migration
-  (pushed), the Deno function (`index.ts`/`openai.ts`/`meal-analysis.ts` + `_shared/cors.ts`), client
-  helper, and the Capture **Analyze** step + result card.
-- **Switched the AI provider Gemini → OpenAI** mid-execution (user has OpenAI billing; OpenAI's
-  no-training-on-API default resolves B5; Structured Outputs retire the schema-nesting question).
-  Updated `CLAUDE.md`'s stack line.
-- **Deployed + web-verified** `analyze-meal` end-to-end (real photo → "Grilled Fish with Rice and
-  Soda" card). Set the `OPENAI_API_KEY` secret. **Plan 0008 → Done.**
-- **Fixed a CORS bug:** browser `functions.invoke` sends `x-client-info` / `x-supabase-api-version`;
-  `_shared/cors.ts` now allows them (a missing allow-header surfaced as a client `network` error).
-- **Drafted + reviewed + Approved plan 0009** (meal review/edit + save). 3 blockers resolved in-plan.
+- **Plan 0009 DONE** — meal review/edit + atomic save via the new `create_meal_log(jsonb,jsonb)` RPC
+  (SECURITY INVOKER, allowlisted/server-set columns, idempotent on `image_path`). Web-verified. S2 done.
+- **Plan 0010 DONE** — in-app privacy policy disclosing OpenAI + Supabase. New unguarded `/privacy`
+  route + 3 entry points (sign-up agreement, Settings "Legal", Capture point-of-processing notice).
+  Review caught 2 copy-accuracy blockers (collection list; honest email-only deletion). Web-verified.
+- **Plan 0011 drafted + reviewed → NEEDS CHANGES** — orphan-photo cleanup (client delete-on-abandon +
+  scheduled server sweep). 4 blockers recorded with resolutions; **not folded into the body yet.**
 
 ## Next steps (pick up here)
-1. **Execute plan 0009** ([docs/plans/0009-meal-review-save.md](../plans/0009-meal-review-save.md)) —
-   Approved. Build order per its Rollout:
-   - Write + `supabase db push` the **`create_meal_log(jsonb, jsonb)` RPC** migration — `SECURITY
-     INVOKER`, `set search_path=''`, server-set `user_id:=auth.uid()`/`verified:=true`, **column
-     allowlist** (no `id`/`user_id`/`verified`/`meal_log_id` from the payload), `image_path` first-
-     segment `= auth.uid()` check, item-count guard `1..50`, `->>`+casts with aliased `with ordinality
-     as t(e, ord)`, **idempotent** `on conflict (image_path) do nothing` → return existing id. **No type
-     regen** (client is untyped; `.rpc` returns `any`).
-   - `src/features/capture/lib/meal-form.ts` (seed/validators mirroring DB bounds + `parseNumber` reuse,
-     `recomputeTotals` on `sumNutrients`, `toSavePayload`) → `lib/save-meal.ts` (`withTimeout` 20 s,
-     map by `error.code` only, never log message/details) → `screens/meal-review.tsx` (editable card,
-     reuse `Input`) → wire into `capture-screen.tsx` as `<MealReview key={uploadedPath ?? 'none'} … />`.
-   - `npx tsc --noEmit` + `npx expo lint`; then **web verify** — analyze → edit → remove an item →
-     totals update → Save → confirm the `meal_logs` row (`verified=true`, `image_path` set) + N
-     `meal_items` rows in Supabase. **Actually invoke the RPC as a signed-in user** (an empty-
-     `search_path` failure only shows on a real call, not on `db push`).
-   - Commit straight to `main`. Next: **S3** — meals history/list + day totals reading these rows.
+1. **Resume plan 0011** ([docs/plans/0011-orphan-photo-cleanup.md](../plans/0011-orphan-photo-cleanup.md)).
+   First **fold the 4 blockers + should-fixes from its `## Review` into the approach/data-model**, then
+   re-confirm the Layer-2 safety design, then execute. Concretely:
+   - **B1:** record "do-not-delete" at **save initiation** (lift to the capture screen via an
+     `onSaving(path)`-style signal), so a path Save was started for is never deleted on a later abandon.
+   - **B2:** sweep must **fail-closed** if `select image_path from meal_logs` errors/empties; per-folder
+     containment; a delete **circuit-breaker** (abort if > cap/% scanned); **observe-only first deploy**.
+   - **B3:** secret as a **live Vault subquery inside the cron command** (never baked); verify no
+     plaintext in `cron.job` / `net._http_response`.
+   - **B4:** keep the Edge Function (raw `delete from storage.objects` does NOT reclaim the S3 blob —
+     confirm empirically at rollout); **verify `pg_cron`/`pg_net` enable on this project before writing
+     the migration**; drop the Vault entry for the non-secret function URL; document the dashboard-Cron /
+     GitHub-Action fallback.
+   - **Should-fixes:** grace → **72 h** + save tolerates a vanished blob; **re-check `meal_logs` right
+     before `.remove()`** + single-run lock; **page the top-level folder list** too; pin
+     `image_path` ↔ `{uid}/{name}` byte-identical; one `maybeDeleteAbandoned()` helper, drop the
+     fresh-pick hook; rate-limit the endpoint; inspect `.remove()` partial results; count-only logging.
+   - **Build order:** Layer 1 (client) first — it's safe, small, and de-risks the headline guard — then
+     the Edge Function + cron migration. Verify the **real cron path** (`select * from cron.job` +
+     `cron.job_run_details` success), not just a manual curl.
+2. Or pick another tracked obligation (see below) if you'd rather not carry 0011.
 
 ## Open questions / risks
-- **OpenAI billing is live but watch cost** — the `analyze_usage` daily cap is **N=50/user/day**;
-  tune if needed. Each analyze is a real paid GPT-4o-mini vision call.
-- **CORS prod origin is still a TODO** in `supabase/functions/_shared/cors.ts` (only Expo web dev
-  origins `localhost:8081`/`127.0.0.1:8081` are allowed today) — add the prod web origin before web prod.
-- **Carry-through drift (plan 0009 v1):** edited macros can diverge from carried sugar/fiber — accepted
-  for v1; per-item recompute-on-edit is the named follow-up.
-- **Tracked obligations:** privacy policy must disclose meal photos + nutrition go to **OpenAI**; 0007
-  SF9 storage orphan cleanup; custom SMTP for signup/reset emails.
-- **`deno check` needs Deno** at `~/.deno/bin/deno` (installed this session; CLI ships none). supabase-js
-  is imported via `esm.sh` (not `jsr:`) in the function so `deno check` resolves it.
+- **0011 is the active risk:** the sweep holds the **service-role key** and can delete any user's
+  photos — the fail-closed + circuit-breaker + dry-run guards (B2) are load-bearing; do not skip them.
+- **Tracked obligations still open:** CORS prod origin + a **public-URL mirror** of the privacy policy
+  (both move together when a prod web domain exists); **self-serve/account deletion** flow (the privacy
+  policy currently routes deletion through email `saba@heartharmona.com`); custom SMTP; carry-through
+  drift (0009 — edited macros vs carried sugar/fiber); real-iPhone camera path (0007). OpenAI spend:
+  `analyze_usage` cap N=50/user/day.
+- Legal placeholders confirmed: COMPANY_NAME "Heart Harmona", CONTACT_EMAIL saba@heartharmona.com.
 
 ## How to resume
 Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`. Work from
 `/Users/roham_abt/Desktop/calorie count` (quote the space). Build **sequentially on `main`** (commit
-straight, no PRs). **Converse in Persian.**
+straight, no PRs). **Converse in Persian.** The Expo web dev server runs on `localhost:8081` (its origin
+is the only one allowed by `_shared/cors.ts`).

@@ -756,3 +756,37 @@ health-adjacent data in Supabase with previously **zero disclosure**. Shipped an
 **Tracked obligations now:** public hosted-URL mirror moves with the CORS prod origin when a prod domain
 lands; 0007 SF9 photo-orphan cleanup + a real self-serve/account-deletion flow are separate follow-ups
 (the policy promises email-based deletion until they ship); custom SMTP; carry-through drift (0009).
+
+### Session 10 close — 2026-06-24 · Plan 0011 (orphan photo cleanup) drafted + reviewed → NEEDS CHANGES
+Tackled tracked obligation #3 (0007 SF9: orphan meal photos accumulate forever — uploaded but never
+saved to a `meal_logs.image_path` row). User chose the **two-layer** strategy: client delete-on-abandon
++ a scheduled server sweep backstop. Drafted plan 0011 and ran the 4-lens review.
+
+- **Verdict: NEEDS CHANGES — 4 blockers, NOT yet resolved in-plan** (recorded in the plan's `## Review`
+  with concrete resolutions; this is a real Layer-2 redesign, unlike 0009/0010's copy fixes):
+  - **B1 (client guard fails open):** the `savedPath`/`onSaved` signal is gated behind `mounted.current`
+    and lost when `MealReview` unmounts (sign-out / re-pick remount) after the save commits → a later
+    abandon deletes a genuinely saved photo. Fix: mark "do-not-delete" at **save initiation**, lifted to
+    the parent — never delete a path Save was even started for.
+  - **B2 (sweep nukes the bucket):** a degraded/empty `select image_path from meal_logs` read makes every
+    object look orphaned → service-role mass-delete. Fix: **fail-closed** on query error, per-folder
+    containment, a delete circuit-breaker (abort if > cap/% of scanned), and an **observe-only first
+    rollout**.
+  - **B3 (secret leak):** Vault secret baked into `cron.job.command` / echoed in `pg_net` tables. Fix:
+    read it as a **live Vault subquery inside the stored cron command**; verify no plaintext in
+    `cron.job`/`net._http_response`.
+  - **B4 (5 new infra primitives):** Edge Function is justified — raw `delete from storage.objects` does
+    NOT reclaim the S3 blob, so the Storage API `.remove()` is required — but confirm pg_cron/pg_net
+    enable on this project first, drop the Vault entry for the (non-secret) function URL, and keep a
+    dashboard-Cron / GitHub-Action fallback.
+- **Key should-fixes to fold:** raise grace to **72 h** + save tolerates a vanished blob; **re-check
+  `meal_logs` immediately before `.remove()`** (TOCTOU) + single-run lock; **page the top-level folder
+  list** (not just per-folder); pin `image_path` ↔ `{uid}/{name}` byte-identical; one
+  `maybeDeleteAbandoned()` helper + drop the redundant fresh-pick hook; rate-limit the
+  `verify_jwt=false` endpoint; inspect `.remove()` partial results.
+- **Why not resolved-in-plan this session:** context budget (~75%) + the redesign depth warrant a fresh
+  session. Next session folds B1–B4 + should-fixes into the approach, re-confirms the Layer-2 safety
+  design, then executes (Layer 1 first — it's safe, small, and de-risks the headline guard).
+
+**Session 10 net:** shipped plans **0009** (meal review/save → S2 complete) and **0010** (in-app privacy
+policy) end-to-end; drafted + reviewed **0011** (left at NEEDS CHANGES for next session).
