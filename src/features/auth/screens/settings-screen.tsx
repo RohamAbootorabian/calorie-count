@@ -22,6 +22,7 @@
  * body metric; validators return generic copy. Post-await setState is guarded by a
  * mounted ref (SF2/SF6) since sign-out can unmount us mid-save.
  */
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -107,6 +108,7 @@ function useGoalsRow(): { loading: boolean; row: GoalsRow | null; error: boolean
 }
 
 export function SettingsScreen() {
+  const router = useRouter();
   const { user } = useUser();
   const { signOut } = useAuth();
   const { profile, loading: profileLoading, refetch: refetchProfile } = useProfile();
@@ -543,7 +545,17 @@ export function SettingsScreen() {
         )}
       </Card>
 
-      {/* 3. Sign out ------------------------------------------------------- */}
+      {/* 3. Legal ---------------------------------------------------------- */}
+      <Card style={styles.section}>
+        <Text type="smallBold" themeColor="textSecondary">
+          Legal
+        </Text>
+        <Text type="linkPrimary" onPress={() => router.push('/privacy')}>
+          Privacy Policy
+        </Text>
+      </Card>
+
+      {/* 4. Sign out ------------------------------------------------------- */}
       <Card style={styles.section}>
         <Button variant="secondary" onPress={handleSignOut} fullWidth>
           Sign out

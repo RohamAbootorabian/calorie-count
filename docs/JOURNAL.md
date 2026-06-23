@@ -724,3 +724,35 @@ shoot a meal, analyze it, **correct the estimate, and persist it** as an owned, 
 
 **Next: S3** — a meals history/list + day totals reading the `meal_logs`/`meal_items` rows this piece
 now writes.
+
+### Session 10 (cont.) — 2026-06-23 · Plan 0010 executed & web-verified — in-app privacy policy DONE
+Closed the highest-risk privacy gap: the app sends meal photos + nutrition to **OpenAI** and stores
+health-adjacent data in Supabase with previously **zero disclosure**. Shipped an in-app privacy policy.
+
+- **`/privacy` route** — content authored as **data** (`src/features/legal/privacy-content.ts`),
+  rendered by a flat presentational screen (no `lib/`/`screens/` ceremony — review trimmed the extra
+  feature dir). Registered as an **unguarded `<Stack.Screen>`** sibling of the three `Stack.Protected`
+  groups in `_layout.tsx`, so it's reachable **both signed-out** (from sign-up) **and signed-in** (from
+  Settings); `headerShown:true` gives a themed back chevron.
+- **Three entry points:** a sign-up agreement line, a Settings "Legal" link, and a Capture
+  **point-of-processing notice** ("uploaded and sent to OpenAI…") shown before the photo leaves the
+  device (it leaves at Upload→Supabase, again at Analyze→OpenAI).
+- **Review caught two real copy-accuracy blockers** (the whole point of an adversarial pass on a legal
+  doc): (B1) the "what we collect" list was incomplete — and a reviewer's claim that "no body-metric
+  columns exist" was **investigated and proven false** (`20260619192848_goals_body_inputs.sql` stores
+  age/sex/height/weight), so the fix was to *expand* the list, not trim it; (B2) deletion was
+  over-promised — there is **no self-serve delete**, no account-deletion flow, and a row delete does
+  **not** remove the Storage photo file, so the policy now routes deletion through email and never
+  implies a button that doesn't exist. Also folded: OpenAI "no-training" claim **attributed +
+  date-anchored** (not self-guaranteed), generic Supabase region, "share only with OpenAI/Supabase"
+  (not an unqualified no-share), and `<Screen scroll>` **without** `tabBarInset` (root screen, no tabs).
+- **Decision — notice over a persisted consent gate for v1**, affirmed by the data/privacy lens: food
+  photos are health-*adjacent*, not GDPR Art. 9 special-category per se, so prominent + pre-action
+  notice + signup agreement is defensible under GDPR/CCPA and meets Apple/Google disclosure
+  expectations. A `profiles.privacy_accepted_at` modal stays the named escalation if a store reviewer
+  requires it. **Verify:** tsc + lint clean; user web-verified reachability (incl. cold deep-link +
+  sign-out-while-open), the capture notice across states, outbound links, and the themed header.
+
+**Tracked obligations now:** public hosted-URL mirror moves with the CORS prod origin when a prod domain
+lands; 0007 SF9 photo-orphan cleanup + a real self-serve/account-deletion flow are separate follow-ups
+(the policy promises email-based deletion until they ship); custom SMTP; carry-through drift (0009).

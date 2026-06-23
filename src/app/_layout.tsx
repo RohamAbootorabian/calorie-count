@@ -100,6 +100,12 @@ function RootNavigator() {
       <Stack.Protected guard={!!session && !needsOnboarding}>
         <Stack.Screen name="(app)" />
       </Stack.Protected>
+      {/*
+       * Privacy policy — UNGUARDED sibling so it's reachable from every auth
+       * state (sign-up before login, Settings after). headerShown:true overrides
+       * the root headerShown:false to give a themed back chevron (plan 0010).
+       */}
+      <Stack.Screen name="privacy" options={{ headerShown: true, title: 'Privacy Policy' }} />
     </Stack>
   );
 }

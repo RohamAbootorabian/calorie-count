@@ -67,4 +67,7 @@ scan the QR code. Add native tooling later when you need camera/build features.
 ## Notes
 - Calorie estimates from photos are **approximate** — portion size is the
   biggest error source. Always let users correct the estimate.
-- Food photos + health data → we need a privacy policy before store submission.
+- Food photos + health data → an **in-app privacy policy** ships at `/privacy`
+  (linked from sign-up, Settings, and the Capture screen; plan 0010). A public
+  hosted-URL mirror is still pending a production web domain (tracked with the
+  CORS prod-origin TODO) before store submission.

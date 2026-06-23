@@ -132,6 +132,14 @@ export function SignUpScreen() {
             Create account
           </Button>
 
+          <Text type="small" themeColor="textSecondary" style={styles.agree}>
+            By creating an account you agree to our{' '}
+            <Text type="linkPrimary" onPress={() => router.push('/privacy')}>
+              Privacy Policy
+            </Text>
+            .
+          </Text>
+
           <View style={styles.links}>
             <Text type="linkPrimary" onPress={() => router.push('/sign-in')}>
               Already have an account? Sign in
@@ -157,5 +165,9 @@ const styles = StyleSheet.create({
   links: {
     marginTop: Spacing.two,
     alignItems: 'center',
+  },
+  agree: {
+    marginTop: Spacing.two,
+    textAlign: 'center',
   },
 });

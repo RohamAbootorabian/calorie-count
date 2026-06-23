@@ -15,6 +15,7 @@
  * mid-call, so post-await setState is guarded by a `mounted` ref (SF8).
  */
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
@@ -86,6 +87,7 @@ function deniedCopy(source: PhotoSource): string {
 }
 
 export function CaptureScreen() {
+  const router = useRouter();
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
   const [uploading, setUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string>();
@@ -238,6 +240,18 @@ export function CaptureScreen() {
             contentFit="cover"
             transition={150}
           />
+
+          {/* Point-of-processing notice (plan 0010): the photo leaves the device
+              at Upload (→ Supabase) and again at Analyze (→ OpenAI). Show it
+              while a photo is selected and not yet saved; hide once MealReview is up. */}
+          {!analysis ? (
+            <Text type="small" themeColor="textSecondary">
+              Your photo is uploaded and sent to OpenAI to estimate nutrition.{' '}
+              <Text type="linkPrimary" onPress={() => router.push('/privacy')}>
+                Privacy
+              </Text>
+            </Text>
+          ) : null}
 
           {uploadedPath ? (
             <>
