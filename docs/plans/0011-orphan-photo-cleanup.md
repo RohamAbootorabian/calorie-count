@@ -305,13 +305,21 @@ _All resolved by the review — kept here as the decision record._
    review-open duration < grace" and save tolerating a vanished blob.
 3. **Schedule cadence.** **RESOLVED → daily** (`17 3 * * *` UTC, off-peak). Hourly is overkill at this
    volume.
-4. **pg_cron / pg_net availability.** **OPEN until execution (a fact to check, not a design gap):**
-   confirm both enable on this project **before** writing the migration; fallback = dashboard Cron UI or
-   a GitHub Action hitting the same (unchanged) function (B4).
-5. **How many client abandon hooks.** **RESOLVED → two** (replacement-upload + choose-another); the
-   pre-upload fresh-pick hook is dropped — no object exists to orphan until an upload succeeds (SF/OQ5).
-6. **Does raw `delete from storage.objects` reclaim the S3 blob?** **OPEN until execution (B4):** assumed
-   NO (→ Edge Function required); verify empirically at rollout (case 4) and collapse Layer 2 if YES.
+4. **pg_cron / pg_net availability.** **RESOLVED 2026-06-24 (empirical, Management API
+   `pg_available_extensions`):** both available on this project, **not yet installed** — `pg_cron` 1.6.4,
+   `pg_net` 0.20.3. `create extension if not exists` in the migration will enable them; no fallback
+   needed.
+5. **How many client abandon hooks.** **RESOLVED → two** (fresh-pick + choose-another); the helper's
+   `prior != null` guard no-ops the pick-then-pick-without-upload case (SF/OQ5; sites corrected at
+   execution — see Execution log).
+6. **Does raw `delete from storage.objects` reclaim the S3 blob?** **RESOLVED 2026-06-24 (empirical) →
+   NO, and it's actively BLOCKED.** This project's `storage.objects` has a `BEFORE DELETE` trigger
+   `protect_objects_delete` → `storage.protect_delete()` that **RAISES** `42501 'Direct deletion from
+   storage tables is not allowed. Use the Storage API instead.'` unless the GUC
+   `storage.allow_delete_query='true'` is set — its own hint: *"This prevents accidental data loss from
+   orphaned objects."* So raw SQL delete cannot reclaim the blob (it errors), and even forcing it would
+   orphan the backend object. **The Edge Function + Storage API `.remove()` is REQUIRED; the
+   "collapse to a `SECURITY DEFINER` fn + pg_cron" alternative is ruled out.**
 
 ---
 
@@ -453,4 +461,16 @@ of execution.** Two items remain facts-to-verify-at-execution, not design gaps: 
   module compiled). **Web-verified by the user** — case 1 (Choose another deletes the orphan), case 2
   (re-pick deletes A, keeps B), case 3 (Save → Log another: the saved photo SURVIVES and `meal_logs`
   still points at it). **Layer 1 DONE.** Layer 2 (server sweep) is the remaining piece.
-<!-- (Layer 2 continues during execution) -->
+### 2026-06-24 — Layer 2 pre-flight fact-checks (B4/OQ4/OQ6, empirical)
+Ran two non-destructive Management-API queries against the live project before writing any infra:
+- **OQ4 — extensions available:** `pg_cron` 1.6.4 + `pg_net` 0.20.3 are available (installed_version
+  null). The migration's `create extension if not exists` will enable them; no external-scheduler
+  fallback needed.
+- **B4/OQ6 — raw delete cannot reclaim the blob, AND is blocked.** `storage.objects` carries a
+  `BEFORE DELETE FOR EACH STATEMENT` trigger `protect_objects_delete` → `storage.protect_delete()`
+  which raises `42501 'Direct deletion from storage tables is not allowed. Use the Storage API
+  instead.'` unless `current_setting('storage.allow_delete_query')='true'`. Hint: "This prevents
+  accidental data loss from orphaned objects." → **Edge Function + `.remove()` is mandatory;** the
+  SECURITY-DEFINER-collapse alternative is ruled out. No test object created (structural proof from the
+  trigger is conclusive).
+<!-- (Layer 2 build continues during execution) -->

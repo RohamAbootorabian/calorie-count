@@ -393,6 +393,12 @@ deno_version = 2
 [functions.analyze-meal]
 verify_jwt = true
 
+# Plan 0011 — scheduled orphan-photo sweep. NOT user-invoked: cron is origin-less
+# and carries no JWT, so verify_jwt is off and a shared `x-cleanup-secret` header
+# (+ a DB-side single-run/rate-limit claim) is the gate instead.
+[functions.cleanup-orphans]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
