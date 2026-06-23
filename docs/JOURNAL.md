@@ -826,3 +826,39 @@ markers (not just left in `## Review`):
 
 **Next:** Layer 2 (scheduled server sweep) — confirm pg_cron/pg_net + the blob-reclaim premise, then
 build the fail-closed `cleanup-orphans` Edge Function + the Vault-subquery cron migration.
+
+### Session 11 (cont.) — 2026-06-24 · Plan 0011 Layer 2 (server sweep) code-complete, pre-deploy
+Continued in the same session: pre-flight fact-checks + built Layer 2 (not deployed — stopped at a
+clean checkpoint with context ~70%, user chose to defer the production deploy to a fresh session).
+
+**Pre-flight fact-checks (empirical, via Management API — no destructive ops):**
+- **pg_cron / pg_net** are AVAILABLE on this project (not yet installed): pg_cron 1.6.4, pg_net 0.20.3.
+  → the migration's `create extension if not exists` will enable them; no external-scheduler fallback.
+- **Raw `delete from storage.objects` is BLOCKED**, not just blob-leaking: `storage.objects` has a
+  `BEFORE DELETE` trigger `protect_objects_delete` → `storage.protect_delete()` that raises `42501
+  'Direct deletion from storage tables is not allowed. Use the Storage API instead.'` unless the GUC
+  `storage.allow_delete_query='true'` is set. Its own hint: "This prevents accidental data loss from
+  orphaned objects." → **the Edge Function + Storage API `.remove()` is mandatory (B4); the
+  SECURITY-DEFINER-collapse alternative is ruled out.** (Structural proof from the trigger; no test
+  object created.)
+
+**Built Layer 2 (deno check + lint clean — same URL-import convention as analyze-meal):**
+- `supabase/functions/cleanup-orphans/index.ts` — service-role sweep that fails CLOSED: aborts on a
+  degraded saved-paths read (B2), per-folder containment, pages BOTH `list('')` and each `list('{uid}')`,
+  byte-identical `{uid}/{name}` match, grace **72h** with fail-safe KEEP on bad/missing timestamps,
+  circuit-breaker (abort if would delete > 500 or > 50% of scanned), **DRY_RUN default ON** (observe-only
+  first cycle), TOCTOU re-check before each `.remove()` batch, per-batch result inspection, count-only logs.
+- `supabase/migrations/20260624140000_schedule_orphan_cleanup.sql` — pg_cron + pg_net; a `cleanup_run`
+  one-row table + SECURITY DEFINER `claim_cleanup_run` (single-run lock + rate-limit, mirrors
+  `analyze_usage`, granted service_role only); idempotent daily cron (`17 3 * * *`) whose command reads
+  the secret as a **live Vault subquery** (B3) — function URL inlined, not Vaulted (B4).
+- `supabase/config.toml` — `[functions.cleanup-orphans] verify_jwt = false`.
+
+**Why deploy was deferred:** a production deploy (generate ≥256-bit secret → Edge `CLEANUP_SECRET` +
+`CLEANUP_DRY_RUN=true` + Vault `cleanup_secret` → `functions deploy` → migration → observe-only verify) is
+real production work; at ~70% context the safe call was to checkpoint the code (commit 09b1896) and deploy
+next session with a fresh budget. DRY_RUN-default makes the eventual deploy safe (deletes nothing until
+proven).
+
+**Session 11 net:** plan 0011 folded NEEDS CHANGES → APPROVED; **Layer 1 SHIPPED + web-verified**
+(commit aa83c54); **Layer 2 code-complete, pre-deploy** (commit 09b1896, unpushed until this session-end).

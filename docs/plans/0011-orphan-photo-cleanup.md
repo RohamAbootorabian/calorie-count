@@ -473,4 +473,20 @@ Ran two non-destructive Management-API queries against the live project before w
   accidental data loss from orphaned objects." → **Edge Function + `.remove()` is mandatory;** the
   SECURITY-DEFINER-collapse alternative is ruled out. No test object created (structural proof from the
   trigger is conclusive).
-<!-- (Layer 2 build continues during execution) -->
+### 2026-06-24 — Layer 2 code-complete (NOT yet deployed)
+- **Files:** NEW `supabase/functions/cleanup-orphans/index.ts` (fail-closed service-role sweep —
+  abort-on-degraded-read, per-folder containment, both-level paging, byte-identical key match, grace
+  72h + fail-safe KEEP on bad timestamps, circuit-breaker, DRY_RUN default ON, TOCTOU re-check,
+  per-batch `.remove()` inspection, count-only logs); NEW
+  `supabase/migrations/20260624140000_schedule_orphan_cleanup.sql` (pg_cron + pg_net; `cleanup_run`
+  table + SECURITY DEFINER `claim_cleanup_run` lock/rate-limit granted service_role only; idempotent
+  daily cron with a live Vault subquery for the secret, function URL inlined); EDIT `config.toml`
+  (`[functions.cleanup-orphans] verify_jwt = false`).
+- **Verified (code):** `deno check` clean; `deno lint` clean except the pre-existing `no-import-prefix`
+  convention (same as `analyze-meal`); app `npx tsc --noEmit` still PASS.
+- **Deferred to next session (rollout steps 4–6):** generate the ≥256-bit secret → Edge
+  `CLEANUP_SECRET` + `CLEANUP_DRY_RUN=true` + Vault `cleanup_secret` → `functions deploy` → `db push` →
+  observe-only verify (dry-run counts / 401 / 429) → go live + planted-orphan deletion test → confirm
+  the real cron path (`cron.job` + `cron.job_run_details` + no plaintext secret). Then mark **Done**.
+  Stopped here at a clean checkpoint (commit `09b1896`) at ~70% context, by user choice, to deploy with
+  a fresh budget. **Layer 1 is DONE; Layer 2 is code-complete, pre-deploy.**
