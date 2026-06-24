@@ -1,8 +1,9 @@
 # Plan: Meal history list + delete-meal flow
 
-- **Status**: **APPROVED** (2026-06-24) — the 2 blockers + should-fixes from `## Review` are folded into
-  the body below (`(resolves Bn)` / `(SF)` markers). Purely client-side: **no schema, RLS, RPC, secret,
-  or function changes** (the delete policy + `meal_items` cascade + the 0011 photo helper already exist).
+- **Status**: **DONE** (2026-06-24) — built per the approved plan, static-verified (tsc/lint/web bundle),
+  and **user web-verified**. The 2 blockers + should-fixes from `## Review` were folded into the body
+  (`(resolves Bn)` / `(SF)` markers). Purely client-side: **no schema, RLS, RPC, secret, or function
+  changes** (the delete policy + `meal_items` cascade + the 0011 photo helper already existed).
 - **Created**: 2026-06-24
 - **Plan #**: 0012
 
@@ -364,6 +365,6 @@ Implemented strictly per the approved plan; no design deviations.
 - **Verified (static):** `npx tsc --noEmit` PASS; `npx expo lint` exit 0 clean; **web bundle compiles
   (HTTP 200, ~7.1 MB, no error)** — the renamed `/history` route + new screen/hook/primitive + both tab
   edits all bundle cleanly on web.
-- **Pending:** interactive web-verify (scenarios 1–8: save → see in History → delete → confirm row +
-  `meal_items` + photo gone; cancel; empty; error/Retry) by the user in a logged-in browser session, as
-  with 0011 Layer 1. Real-device `Alert.alert` pass deferred (bundles with the 0007 device session).
+- **User web-verified (2026-06-24):** the user confirmed the flow works end-to-end in a logged-in
+  browser session ("درسته همه چی"). **Plan 0012 DONE.** Real-device `Alert.alert` pass remains deferred
+  (bundles with the 0007 device session); thumbnails / pagination / meal-edit are tracked follow-ups.

@@ -897,3 +897,32 @@ verification (DRY_RUN on; fires 03:17 UTC, not during the test).
 circuit-breaker thresholds in code, byte-identical match, TOCTOU re-check, count-only logging). DRY_RUN
 is now **live**; the cron is armed. **Plan 0011 DONE; 0007 SF9 (orphan storage lifecycle) closed.**
 Secret hygiene: rotate the Edge secret + Vault entry together. Remaining tracked obligations unchanged.
+
+### Session 12 (cont.) — 2026-06-24 · Plan 0012 meal history + delete-meal flow → DONE
+Picked the next tracked obligation (the delete-meal flow / 0011 NIT). Discovered there was **no meal
+history surface at all** — Home/Explore were still Expo starter screens and `meal_logs` was never read
+back. The user chose "history list + delete in one plan."
+
+**Plan + review:** wrote plan 0012; the 4-lens review returned **2 blockers**, both *missed surfaces*
+(not design flaws): (B1) the route rename `explore→history` forgot `app-tabs.web.tsx` (hardcoded
+`href="/explore"`) → web nav would break; (B2) shipping in-app delete contradicts the published privacy
+policy, which states "there is NO self-serve delete." The headline should-fix — **drop the optimistic
+`removeLocal`/`restoreLocal` hook mutators for plain await-then-refetch** — also dissolved a cluster of
+rollback/sign-out edge cases. All folded → Approved.
+
+**Built (no design deviation):** a new `history` feature — `useMealHistory` (owner-scoped, newest-first,
+`limit(100)`, `Pick<>` column allowlist, `useProfile` lifecycle discipline), `deleteMeal` (owner-scoped
+row delete + `meal_items` cascade + best-effort `deleteMealPhoto` reusing the 0011 helper; 15 s timeout;
+idempotent — `ok` iff `error === null`; typed-kind errors; no-PII logging), and a History screen
+(`FlatList`; await-then-refetch delete with confirm; in-flight `Set<id>` gating both dialog and call;
+`Alert.alert` native / `window.confirm` web; pull-to-refresh + web Refresh button; "100 most recent"
+notice). Repurposed the throwaway Explore tab → History (renamed route + **both** tab files, B1).
+Updated `privacy-content.ts` to disclose in-app per-meal deletion (B2).
+
+**Why no backend work:** the `meal_logs_delete` RLS policy (`auth.uid() = user_id`) and the
+`meal_items … on delete cascade` already existed; deletion needed zero migration.
+
+**Verified:** `npx tsc --noEmit` PASS; `npx expo lint` clean; web bundle compiles (HTTP 200); **user
+web-verified** the full flow in a logged-in browser. **Plan 0012 DONE.** Follow-ups still open: photo
+thumbnails (signed URLs), pagination past 100, meal **edit**, daily totals/dashboard, account/bulk
+self-serve deletion (still email-routed), real-device pass, real tab art.
