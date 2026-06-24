@@ -15,6 +15,7 @@
  * (RefreshControl can no-op on web).
  */
 import { Image } from 'expo-image';
+import { router, useFocusEffect } from 'expo-router';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -72,6 +73,21 @@ export default function HistoryScreen() {
       mounted.current = false;
     };
   }, []);
+
+  // Reflect edits made on the edit screen (plan 0015): refetch when this screen
+  // regains focus — but SKIP the very first focus (it coincides with the mount
+  // fetch in `useMealHistory`, so refetching would double-fire and flip
+  // `loading` mid-interaction). The mount fetch already has fresh data.
+  const hadFirstFocus = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!hadFirstFocus.current) {
+        hadFirstFocus.current = true;
+        return;
+      }
+      refetch();
+    }, [refetch]),
+  );
 
   const doDelete = useCallback(
     async (meal: MealCard) => {
@@ -177,6 +193,7 @@ export default function HistoryScreen() {
           meal={meal}
           thumbUrl={urlFor(meal.image_path)}
           deleting={deletingIds.has(meal.id)}
+          onEdit={() => router.push({ pathname: '/meal-edit', params: { id: meal.id } })}
           onDelete={() => confirmThenDelete(meal)}
           onThumbError={reportError}
         />
@@ -256,12 +273,14 @@ const MealRow = memo(function MealRow({
   meal,
   thumbUrl,
   deleting,
+  onEdit,
   onDelete,
   onThumbError,
 }: {
   meal: MealCard;
   thumbUrl: string | undefined;
   deleting: boolean;
+  onEdit: () => void;
   onDelete: () => void;
   onThumbError: (path: string | null) => void;
 }) {
@@ -286,11 +305,19 @@ const MealRow = memo(function MealRow({
         {deleting ? (
           <ActivityIndicator />
         ) : (
-          <Pressable onPress={onDelete} accessibilityRole="button" hitSlop={Spacing.two}>
-            <Text type="smallBold" themeColor="danger">
-              Delete
-            </Text>
-          </Pressable>
+          // Hide both actions while a delete is in flight (the spinner replaces them).
+          <View style={styles.rowActions}>
+            <Pressable onPress={onEdit} accessibilityRole="button" hitSlop={Spacing.two}>
+              <Text type="smallBold" themeColor="primary">
+                Edit
+              </Text>
+            </Pressable>
+            <Pressable onPress={onDelete} accessibilityRole="button" hitSlop={Spacing.two}>
+              <Text type="smallBold" themeColor="danger">
+                Delete
+              </Text>
+            </Pressable>
+          </View>
         )}
       </View>
 
@@ -400,6 +427,7 @@ const styles = StyleSheet.create({
   thumbPlaceholder: {
     borderWidth: StyleSheet.hairlineWidth,
   },
+  rowActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   rowInfo: { flex: 1, gap: Spacing.half },
   macros: { marginTop: Spacing.two, gap: Spacing.half },
 });

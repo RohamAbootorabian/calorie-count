@@ -99,6 +99,13 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={!!session && !needsOnboarding}>
         <Stack.Screen name="(app)" />
+        {/*
+         * Edit a saved meal (plan 0015) — a GUARDED root sibling so it presents
+         * over the tabs with a themed back chevron; only reachable when signed
+         * in + onboarded (a sign-out unmounts it mid-edit). headerShown:true
+         * overrides the root headerShown:false.
+         */}
+        <Stack.Screen name="meal-edit" options={{ headerShown: true, title: 'Edit Meal' }} />
       </Stack.Protected>
       {/*
        * Privacy policy — UNGUARDED sibling so it's reachable from every auth

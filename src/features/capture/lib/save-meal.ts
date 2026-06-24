@@ -3,21 +3,19 @@
  * One atomic, idempotent, self-validating round-trip: the RPC inserts the
  * parent + children in a single transaction and returns the `meal_logs.id`.
  *
- * Error contract: `supabase.rpc()` resolves to `{ data, error }` where `error`
- * is a **PostgrestError** (`code`, `message`, `details`, `hint`) — NOT the
- * `Functions*Error` classes the analyze helper throws. Its `message/details/
- * hint` can echo row VALUES (dish, path, numbers = health PII), so we map
- * **by `error.code` (SQLSTATE) only** and log **only the typed kind**.
+ * The call machinery (timeout race + PII-safe SQLSTATE-only outcome) lives in
+ * the shared `callMealRpc` primitive (plan 0015); this file owns only the
+ * save-specific result type, SQLSTATE→kind classify, and typed-kind logging.
  *
- * The client is untyped (`src/lib/supabase.ts` builds the client without the
- * `<Database>` generic), so `.rpc(...)` returns `any`; we cast the result to a
- * string id. No type regen needed.
+ * Error contract: `supabase.rpc()` resolves to `{ data, error }` where `error`
+ * is a **PostgrestError** whose `message/details/hint` can echo row VALUES
+ * (dish, path, numbers = health PII), so we map **by `error.code` (SQLSTATE)
+ * only** and log **only the typed kind**.
  *
  * PII discipline: never logs the payload, dish, item names, path, or uid —
  * only the typed `kind` (mirrors `upload-meal-photo.ts`).
  */
-import { supabase } from '@/lib/supabase';
-
+import { callMealRpc } from './meal-rpc';
 import type { SavePayload } from './meal-form';
 
 const RPC_TIMEOUT_MS = 20_000;
@@ -33,20 +31,6 @@ export type SaveErrorKind = 'unauthorized' | 'invalid' | 'conflict' | 'network' 
 export type SaveResult =
   | { ok: true; id: string }
   | { ok: false; kind: SaveErrorKind };
-
-const TIMEOUT = Symbol('timeout');
-
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIMEOUT> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<typeof TIMEOUT>((resolve) => {
-    timer = setTimeout(() => resolve(TIMEOUT), ms);
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer!);
-  }
-}
 
 /** Map a SQLSTATE to a typed kind. The RPC raises explicit errcodes (B2/B3). */
 function classifyCode(code: string | undefined): SaveErrorKind {
@@ -66,33 +50,23 @@ function classifyCode(code: string | undefined): SaveErrorKind {
 }
 
 export async function saveMeal({ payload }: { payload: SavePayload }): Promise<SaveResult> {
-  // `supabase.rpc()` returns a thenable builder, not a Promise — wrap it so the
-  // timeout race typechecks (Promise.resolve adopts the thenable at runtime).
-  const invocation = Promise.resolve(
-    supabase.rpc('create_meal_log', { p_log: payload.log, p_items: payload.items }),
+  const outcome = await callMealRpc(
+    'create_meal_log',
+    { p_log: payload.log, p_items: payload.items },
+    { timeoutMs: RPC_TIMEOUT_MS },
   );
 
-  let raced: Awaited<typeof invocation> | typeof TIMEOUT;
-  try {
-    raced = await withTimeout(invocation, RPC_TIMEOUT_MS);
-  } catch {
-    // A thrown (vs. returned) error is a transport/fetch failure → transient.
-    return { ok: false, kind: 'network' };
-  }
+  if (outcome.status === 'network') return { ok: false, kind: 'network' };
 
-  if (raced === TIMEOUT) return { ok: false, kind: 'network' };
-
-  const { data, error } = raced;
-
-  if (error) {
-    const kind = classifyCode((error as { code?: string }).code);
+  if (outcome.status === 'error') {
+    const kind = classifyCode(outcome.code);
     // Log ONLY the typed kind — never the PostgrestError message/details (PII).
     console.warn('[saveMeal] failed:', kind);
     return { ok: false, kind };
   }
 
-  // Untyped client → `data` is `any`; the RPC returns the new (or existing) id.
-  const id = data as unknown;
+  // Untyped client → `data` is `unknown`; the RPC returns the new (or existing) id.
+  const id = outcome.data;
   if (typeof id === 'string' && id) return { ok: true, id };
   return { ok: false, kind: 'unknown' };
 }

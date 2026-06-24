@@ -1038,3 +1038,62 @@ a dedicated `updateMeal` result type (no reused `conflict`/`id`). All 5 RLS poli
 SECURITY-INVOKER `update_meal_log` RPC relies on were verified present. Tree clean, tsc
 green, all pushed. **Next session: execute plan 0015** (it includes a migration deploy —
 heavier than the recent pure-client plans).
+
+## Session 14 — 2026-06-24
+
+### Plan 0015 DONE — edit a saved meal (first UPDATE surface) + migration deploy
+Executed the approved plan 0015 end-to-end with **no material deviations**. The app's
+first post-save edit path: from a History row, open an edit screen seeded with the meal's
+current dish + items + totals, change/remove, Save → atomic update → back to History
+(refetch-on-focus shows the new values). Totals always = `sum(items)`.
+
+**The atomic RPC (new migration `20260624150000_update_meal_log`).** Mirrors
+`create_meal_log`'s security posture (`SECURITY INVOKER`, `set search_path=''`, allowlisted
+`->>` reads, server-set `meal_log_id`/`position`). Body order — **ownership before any
+child mutation**: auth `28000` → item-count 1..50 `23514` → parent UPDATE scoped to
+`id=p_id AND user_id=auth.uid()` → `GET DIAGNOSTICS ROW_COUNT=0` raises a **distinct
+`P0002`** (so the client says "no longer exists", not "check your values") → delete
+children → re-insert `with ordinality`. NEVER touches `user_id`/`image_path`/`eaten_at`/
+`created_at`/`verified`/**`updated_at`** (the `set_updated_at` trigger owns the last; B1).
+One implicit txn → a failed re-insert rolls back, children never lost. Dropped the
+create-path `image_path`/namespace block (column never written here). **`db push`ed to
+prod**; Management-API check confirmed it exists, `prosecdef=false`, grants
+`authenticated:EXECUTE` (no `anon`) — identical to `create_meal_log`.
+
+**Client.** New shared `callMealRpc` primitive (`capture/lib/meal-rpc.ts`) — factored the
+`withTimeout`/`TIMEOUT`/race + a transport-agnostic `{status:'ok'|'error'|'network'}`
+outcome carrying ONLY the SQLSTATE out of `saveMeal`; each caller keeps its own
+classify + typed-kind logging (so `saveMeal` retains `conflict`+`id`; `updateMeal`
+(`history/lib/update-meal.ts`) has a **dedicated** result type with `not_found` mapped from
+`P0002`/`23503`, no `id`, no `conflict` — B2). `useMealDetail` (`history/lib`) fetches the
+editable detail with strict `Pick<>` allowlists (no `image_path`/totals), explicit
+`.eq('user_id')` parent guard + RLS-only child scope, and a **both-or-neither gate**
+(parent-deleted OR items-error OR 0-items → one hard error, never a partial Save-disabled
+seed). `seedFormFromMealLog` (added to `meal-form.ts`, + `StoredMealLog`/`StoredMealItem`)
+maps a stored row → the SAME `MealForm` as create, so every validator/`recomputeTotals`/
+`toSavePayload` is reused; `quality` reconstructed only when `quality_score != null`.
+
+**UI.** Extracted the editable body (dish + items + live totals + assumptions) into a
+shared **`MealEditorForm`** (`capture/screens/meal-editor-form.tsx`) used by BOTH
+`meal-review` (create) and the new `edit-meal-screen` — pinned controlled props
+(`form/onDishChange/onItemChange/onRemoveItem/totals/withinCaps`); the assumptions block
+now reads `form.assumptions` (was `analysis.assumptions`) so it serves both. New
+`edit-meal-screen.tsx` (loading/error gates → `key`ed child seeds form once via `useState`
+initializer → Save → `router.back()`; terminal `not_found` screen with Back; transient →
+inline retry; `mounted` ref wraps the `updateMeal` resolution). Guarded root route
+`src/app/meal-edit.tsx` + `<Stack.Screen name="meal-edit" headerShown title="Edit Meal">`
+inside the signed-in+onboarded guard. History gained an **Edit** affordance per row +
+`useFocusEffect(refetch)` that **skips the first focus** (a `hadFirstFocus` ref) so it
+doesn't double-fire with the mount fetch (SF4).
+
+**Deviation worth noting:** the plan said "don't over-copy `useMealHistory`'s keyed-outcome
+machinery," but `expo lint`'s `react-hooks/set-state-in-effect` forbids synchronous
+`setState` in an effect body — so `useMealDetail` adopts the SAME keyed-outcome +
+`useMemo` derivation (setState only in the async callback, keyed to
+`(id,userId,reloadKey)`). The right call; gate + PII discipline unchanged. Minor:
+`estimated_grams` null seeds as `0` (form type is `number`) → a no-change save writes `0`
+not `null` (legacy-row edge, within "carried-through" tolerance, passes the column bound).
+
+**Verified:** `tsc` PASS; `expo lint` clean; web bundles HTTP 200 + valid JS (edit chain
+present); migration applied + verified in prod; **user web-verified** (seed/edit/persist,
+remove item, today-meal dashboard reflect, over-cap block, create-flow regression). DONE.

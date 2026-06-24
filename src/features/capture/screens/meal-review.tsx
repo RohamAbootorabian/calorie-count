@@ -4,6 +4,10 @@
  * macros, remove an item) with live-recomputed totals, then SAVE it as one
  * `meal_logs` + N `meal_items` rows via the atomic `create_meal_log` RPC.
  *
+ * The editable body (dish + items + totals + assumptions) is the shared
+ * `MealEditorForm` (plan 0015), used by both this create flow and the edit
+ * flow; this screen owns only the save/error/saved lifecycle around it.
+ *
  * Colocated with the capture screen (not a route, not a new `components/` dir —
  * the repo uses `lib/` + `screens/`; mirrors `settings-screen.tsx` hosting
  * `GoalsReview`). The capture screen `key`s this by `imagePath` so re-picking a
@@ -18,7 +22,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { Button, Card, Input, Text } from '@/shared/ui';
+import { Button, Text } from '@/shared/ui';
 import type { MealAnalysis } from '@/types/nutrition';
 
 import {
@@ -27,12 +31,11 @@ import {
   seedFormFromAnalysis,
   toSavePayload,
   totalsWithinCaps,
-  validateDishName,
-  validateItem,
   type MealForm,
   type MealItemForm,
 } from '../lib/meal-form';
 import { saveMeal, type SaveErrorKind } from '../lib/save-meal';
+import { MealEditorForm } from './meal-editor-form';
 
 type MealReviewProps = {
   analysis: MealAnalysis;
@@ -80,7 +83,6 @@ export function MealReview({ analysis, imagePath, onLogAnother, onSaving }: Meal
 
   const totals = useMemo(() => recomputeTotals(form.items), [form.items]);
   const withinCaps = totalsWithinCaps(totals);
-  const dishError = validateDishName(form.dishName);
 
   function setDishName(value: string) {
     setForm((prev) => ({ ...prev, dishName: value }));
@@ -142,62 +144,15 @@ export function MealReview({ analysis, imagePath, onLogAnother, onSaving }: Meal
   return (
     <View style={styles.container}>
       <Text type="subtitle">Review &amp; save</Text>
-      <Text type="small" themeColor="textSecondary">
-        Confidence: {form.confidence}
-        {form.quality ? ` · Quality ${Math.round(form.quality.score)}/100` : ''}
-      </Text>
 
-      <Input
-        label="Dish name"
-        value={form.dishName}
-        onChangeText={setDishName}
-        error={dishError}
-        autoCapitalize="sentences"
+      <MealEditorForm
+        form={form}
+        onDishChange={setDishName}
+        onItemChange={setItemField}
+        onRemoveItem={removeItem}
+        totals={totals}
+        withinCaps={withinCaps}
       />
-
-      {form.items.map((item, index) => (
-        <ItemRow
-          key={item.id}
-          item={item}
-          index={index}
-          onChange={(field, value) => setItemField(item.id, field, value)}
-          onRemove={() => removeItem(item.id)}
-          canRemove={form.items.length > 1}
-        />
-      ))}
-
-      {form.items.length === 0 ? (
-        <Text type="small" themeColor="danger">
-          Add at least one item to save (remove undid the last one).
-        </Text>
-      ) : null}
-
-      {/* Live totals -------------------------------------------------------- */}
-      <Card>
-        <Text type="smallBold" themeColor="textSecondary">
-          Meal totals
-        </Text>
-        <View style={styles.totalsRows}>
-          <TotalRow label="Calories" value={`${Math.round(totals.calories)}`} />
-          <TotalRow label="Protein" value={`${Math.round(totals.protein)} g`} />
-          <TotalRow label="Carbs" value={`${Math.round(totals.carbs)} g`} />
-          <TotalRow label="Fat" value={`${Math.round(totals.fat)} g`} />
-          <TotalRow label="Sugar" value={`${Math.round(totals.sugar)} g`} />
-          <TotalRow label="Fiber" value={`${Math.round(totals.fiber)} g`} />
-          <TotalRow label="Sodium" value={`${Math.round(totals.sodium)} mg`} />
-        </View>
-        {!withinCaps ? (
-          <Text type="small" themeColor="danger">
-            These totals are too large to save — remove or reduce items.
-          </Text>
-        ) : null}
-      </Card>
-
-      {analysis.assumptions && analysis.assumptions.length > 0 ? (
-        <Text type="small" themeColor="textSecondary">
-          Assumed: {analysis.assumptions.join(' · ')}
-        </Text>
-      ) : null}
 
       {saveError ? (
         <Text type="small" themeColor="danger">
@@ -212,117 +167,8 @@ export function MealReview({ analysis, imagePath, onLogAnother, onSaving }: Meal
   );
 }
 
-/** One editable item: name + calories/protein/carbs/fat + remove. */
-function ItemRow({
-  item,
-  index,
-  onChange,
-  onRemove,
-  canRemove,
-}: {
-  item: MealItemForm;
-  index: number;
-  onChange: (field: keyof MealItemForm, value: string) => void;
-  onRemove: () => void;
-  canRemove: boolean;
-}) {
-  const errors = validateItem(item);
-  return (
-    <Card style={styles.itemCard}>
-      <View style={styles.itemHeader}>
-        <Text type="smallBold" themeColor="textSecondary">
-          Item {index + 1}
-        </Text>
-        <Button variant="secondary" onPress={onRemove} disabled={!canRemove}>
-          Remove
-        </Button>
-      </View>
-
-      <Input
-        label="Name"
-        value={item.name}
-        onChangeText={(value) => onChange('name', value)}
-        error={errors.name}
-      />
-
-      <View style={styles.nutrientGrid}>
-        <View style={styles.nutrientCell}>
-          <Input
-            label="Calories"
-            value={item.calories}
-            onChangeText={(value) => onChange('calories', value)}
-            error={errors.calories}
-            keyboardType="decimal-pad"
-          />
-        </View>
-        <View style={styles.nutrientCell}>
-          <Input
-            label="Protein (g)"
-            value={item.protein}
-            onChangeText={(value) => onChange('protein', value)}
-            error={errors.protein}
-            keyboardType="decimal-pad"
-          />
-        </View>
-        <View style={styles.nutrientCell}>
-          <Input
-            label="Carbs (g)"
-            value={item.carbs}
-            onChangeText={(value) => onChange('carbs', value)}
-            error={errors.carbs}
-            keyboardType="decimal-pad"
-          />
-        </View>
-        <View style={styles.nutrientCell}>
-          <Input
-            label="Fat (g)"
-            value={item.fat}
-            onChangeText={(value) => onChange('fat', value)}
-            error={errors.fat}
-            keyboardType="decimal-pad"
-          />
-        </View>
-      </View>
-    </Card>
-  );
-}
-
-function TotalRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.totalRow}>
-      <Text type="default">{label}</Text>
-      <Text type="default">{value}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     gap: Spacing.three,
-  },
-  itemCard: {
-    gap: Spacing.two,
-  },
-  itemHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  nutrientGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
-  },
-  nutrientCell: {
-    flexGrow: 1,
-    flexBasis: '45%',
-  },
-  totalsRows: {
-    gap: Spacing.one,
-    marginTop: Spacing.one,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
   },
 });

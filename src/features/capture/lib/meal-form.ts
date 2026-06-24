@@ -101,6 +101,70 @@ export function seedFormFromAnalysis(analysis: MealAnalysis): MealForm {
   };
 }
 
+/**
+ * The stored-row shapes `seedFormFromMealLog` consumes (plan 0015 — edit). A
+ * structural subset of the `meal_logs`/`meal_items` rows: exactly the editable +
+ * carried fields the edit form needs (NOT totals — those are recomputed from the
+ * items on save). Defined here, not imported from the DB types, so this pure
+ * model stays I/O-free; the `useMealDetail` fetch is the one that maps DB rows
+ * to these (its `Pick<>` is the type-level guarantee they line up).
+ */
+export type StoredMealLog = {
+  dish_name: string;
+  confidence: string;
+  quality_score: number | null;
+  quality_factors: string[] | null;
+  assumptions: string[] | null;
+};
+
+export type StoredMealItem = {
+  name: string;
+  portion: string | null;
+  estimated_grams: number | null;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fat: number;
+  sugar: number;
+  fiber: number;
+  sodium: number;
+};
+
+/**
+ * Seed an editable form from a STORED meal (sibling to `seedFormFromAnalysis`),
+ * producing the SAME `MealForm` so every validator / `recomputeTotals` /
+ * `totalsWithinCaps` / `toSavePayload` is reused as-is. `quality` is
+ * reconstructed only when `quality_score != null` (mirrors `toSavePayload`'s
+ * `form.quality ? … : null` gating, so factors aren't dropped/resurrected
+ * inconsistently); `confidence` is `NOT NULL` so it maps cleanly (the column is
+ * a `text` but constrained to the `Confidence` set by the schema). Stable `id` =
+ * the row index at seed (same as create; removal filters, never reindexes).
+ */
+export function seedFormFromMealLog(log: StoredMealLog, items: StoredMealItem[]): MealForm {
+  return {
+    dishName: log.dish_name?.trim() ? log.dish_name : 'Meal',
+    confidence: log.confidence as Confidence,
+    quality:
+      log.quality_score != null
+        ? { score: log.quality_score, factors: log.quality_factors ?? [] }
+        : undefined,
+    assumptions: log.assumptions ?? undefined,
+    items: items.map((item, i) => ({
+      id: String(i),
+      name: item.name,
+      calories: numToInput(item.calories),
+      protein: numToInput(item.protein),
+      carbs: numToInput(item.carbs),
+      fat: numToInput(item.fat),
+      portion: item.portion ?? '',
+      estimatedGrams: item.estimated_grams ?? 0,
+      sugar: item.sugar,
+      fiber: item.fiber,
+      sodium: item.sodium,
+    })),
+  };
+}
+
 // --- Validation (mirrors the DB bounds; friendly copy, no value echo) -------
 
 function validateBounded(raw: string, max: number, noun: string): string | undefined {

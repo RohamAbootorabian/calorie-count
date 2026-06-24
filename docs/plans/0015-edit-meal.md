@@ -1,6 +1,6 @@
 # Plan: Edit a saved meal
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-06-24
 - **Plan #**: 0015
 
@@ -299,3 +299,49 @@ confirmations, not blockers. **Note:** execution includes a **migration deploy**
 ## Execution log
 <!-- Filled during execution: what actually happened, any deviation from the plan
      and why, final verification result. -->
+
+### Session 14 — 2026-06-24 (built per plan, migration deployed)
+Built strictly to the approved plan; **no material deviations**. Order: migration →
+shared `callMealRpc` (+ `saveMeal` refactor) → `seedFormFromMealLog` → `useMealDetail`
+→ `updateMeal` → `MealEditorForm` extraction (+ `meal-review` refactor) → edit screen
++ route + `_layout` registration → History Edit affordance + skip-first-focus refetch.
+
+**Files:** new `supabase/migrations/20260624150000_update_meal_log.sql`,
+`src/features/capture/lib/meal-rpc.ts`, `src/features/history/lib/use-meal-detail.tsx`,
+`src/features/history/lib/update-meal.ts`,
+`src/features/capture/screens/meal-editor-form.tsx`,
+`src/features/history/screens/edit-meal-screen.tsx`, `src/app/meal-edit.tsx`. Edited
+`save-meal.ts` (now wraps `callMealRpc`), `meal-form.ts` (+`seedFormFromMealLog`,
+`StoredMealLog`/`StoredMealItem`), `meal-review.tsx` (uses `MealEditorForm`),
+`history-screen.tsx` (Edit action + `useFocusEffect`), `_layout.tsx` (guarded
+`meal-edit` Stack screen).
+
+**Deviations / notes:**
+- **`callMealRpc` shape:** factored to return a transport-agnostic
+  `{ status: 'ok'|'error'|'network' }` carrying ONLY the SQLSTATE; each caller keeps
+  its own classify + typed-kind logging (so `saveMeal` keeps `conflict`+`id`, `updateMeal`
+  has `not_found`, no id). The shared `withTimeout`/`TIMEOUT`/race now lives once in
+  `meal-rpc.ts`.
+- **`useMealDetail` lifecycle:** the plan said "don't over-copy `useMealHistory`'s
+  keyed-outcome machinery," but `expo lint`'s `react-hooks/set-state-in-effect` forbids
+  synchronous `setState` in an effect body. Adopted the SAME keyed-outcome + `useMemo`
+  pattern as `useMealHistory` (keyed to `(id, userId, reloadKey)`, setState only in the
+  async callback). The both-or-neither gate + PII discipline are intact; only the proven
+  lifecycle shape changed vs. the plan sketch (the right call).
+- **Edit-screen seeding:** the loaded editor is a child component `key`ed to `id`, so the
+  form seeds once from `detail` via a `useState` initializer (no seed-in-effect). Terminal
+  `not_found` → a "no longer exists" screen with Back (no retry); transient kinds → inline
+  retry. `mounted` ref wraps the `updateMeal` resolution (review NIT).
+- **`estimatedGrams` on seed:** a stored `null` `estimated_grams` seeds as `0` (the form
+  type is `number`); a no-change save then writes `0` rather than `null`. Within the
+  plan's "carried-through" tolerance (analysis always supplies a number; null is a
+  legacy-row edge), harmless against the column's bound check.
+
+**Verified:** `npx tsc --noEmit` PASS; `expo lint` clean; web bundles compile (HTTP 200,
+valid JS, no error envelope) — `meal-edit.tsx`, `edit-meal-screen.tsx`, `meal-review.tsx`
+chains all present (`update_meal_log`/`seedFormFromMealLog`/`useMealDetail`/`callMealRpc`).
+**Migration `db push`ed to prod** (ref `vldpfoczswakghkrkyrm`); Management-API check
+confirms `update_meal_log(p_id uuid, p_log jsonb, p_items jsonb)` exists, `SECURITY
+INVOKER` (`prosecdef=false`), grants `authenticated:EXECUTE` (no `anon`) — identical
+posture to `create_meal_log`. **User web-verified** (edit seed/save/persist, remove item,
+today-meal dashboard reflect, over-cap block, and the create-flow regression). **DONE.**
