@@ -986,3 +986,41 @@ DONE.** Follow-ups still open: tap-to-enlarge/lightbox (OQ4, non-goal here),
 pagination past 100, meal **edit**, daily totals/dashboard, account/bulk self-serve
 deletion (still email-routed), real-device pass (now also covers the native
 cacheKey-survival test), real tab art.
+
+### Session 13 (cont.) — 2026-06-24 · Plan 0014 daily dashboard → DONE
+Picked HANDOFF candidate 2 (dashboard). The **Home tab was still the Expo starter** —
+the landing surface showed nothing about the user's day, while `meal_logs` (per-meal
+totals) and `goals` (daily targets) already held everything needed. Built the app's
+**first aggregate-read surface**: today's calories + macros vs goals.
+
+**Plan + review:** wrote plan 0014; the 4-lens review returned **3 blockers** — (B1) a
+**tz-ordering bug**: `useProfile` renders `null` tz first then the real tz, and the
+`(userId, reloadKey)` fetch keying (copied from `useMealHistory`) doesn't react to a
+*second* async input (tz), so totals could bucket under the UTC/device fallback and
+never correct; (B2) **divide-by-zero/NaN** drift across the four metrics from prose-only
+0-goal handling; (B3) extracting Settings' `useGoalsRow` (which does `select('*')`)
+would **leak body-PII** (age/sex/height/weight) onto Home. All resolved by edits: tz is
+a **param** + bucket is a `useMemo(rows, tz)` (re-buckets on late tz, also kills a double
+profile fetch); one guarded `progressFor` helper; a dashboard-local NARROW goals reader
+(4 columns), Settings untouched. RLS for both reads verified present
+(`meal_logs_select`, `goals_select` in the initial migration). → Approved.
+
+**Built (no deviation):** `useDailyGoals` (narrow `Pick<>`, in-code `.eq('user_id')`,
+refetch), `useDailyTotals(tz)` (48 h bounded `.gte(eaten_at)` — provably covers "today"
+in any tz: ≤25 h day + ≤14 h offset ≈ 39 h ≤ 48 h — then bucket+sum in `useMemo(rows,
+tz)` via one hardcoded-`en-CA` `Intl.DateTimeFormat`; **same-formatter date-string
+compare** sidesteps all UTC-offset/DST math; try/catch at construction → UTC fallback),
+and the dashboard screen (single `useProfile`, tz resolve stored→device→UTC, guarded
+`progressFor` for calories + P/C/F, two-View progress bars (no svg), gate-order
+loading→profile-error→totals-error, no-meals/no-goals empty states, `useFocusEffect`
+refetch of totals+goals). Home `(app)/index.tsx` → thin re-export (mirrors `history.tsx`);
+tab stays `/`, so no `app-tabs*` edit.
+
+**Native caveat (tracked):** Hermes without full-ICU can *silently ignore* the `Intl`
+`timeZone` option (no throw → bucket by device-local). Web has full Intl so web-verify is
+valid; the deferred iPhone pass must confirm tz is honored.
+
+**Verified:** `tsc` PASS; `expo lint` clean; web bundle HTTP 200 (~7.9 MB, zero errors);
+**user web-verified**. **Plan 0014 DONE.** Follow-ups: weekly/trend view, calorie ring
+(OQ1), quality nutrients on dashboard (OQ2), and the iPhone pass (now also covers native
+Intl tz-honoring).
