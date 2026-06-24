@@ -14,7 +14,8 @@
  * (native); the always-present header Refresh button is the web refresh path
  * (RefreshControl can no-op on web).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Image } from 'expo-image';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -27,12 +28,16 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { Button, Card, Text } from '@/shared/ui';
 
 import { deleteMeal } from '../lib/delete-meal';
 import { HISTORY_LIMIT, useMealHistory, type MealCard } from '../lib/use-meal-history';
+import { useSignedThumbnails } from '../lib/use-signed-thumbnails';
+
+/** Fixed thumbnail footprint — always reserved so the row height never jumps. */
+const THUMB_SIZE = 56;
 
 /** Short, locale-aware "when eaten" label, e.g. "Jun 24, 2:15 PM". */
 function formatEatenAt(iso: string): string {
@@ -52,6 +57,7 @@ function round(n: number): number {
 
 export default function HistoryScreen() {
   const { loading, meals, error, refetch } = useMealHistory();
+  const { urlFor, reportError } = useSignedThumbnails(meals);
   const insets = useSafeAreaInsets();
 
   // Ids whose delete is in flight — gates the confirm dialog AND the call.
@@ -169,8 +175,10 @@ export default function HistoryScreen() {
       renderItem={(meal) => (
         <MealRow
           meal={meal}
+          thumbUrl={urlFor(meal.image_path)}
           deleting={deletingIds.has(meal.id)}
           onDelete={() => confirmThenDelete(meal)}
+          onThumbError={reportError}
         />
       )}
     />
@@ -244,18 +252,29 @@ function FlatListContainer({
   );
 }
 
-function MealRow({
+const MealRow = memo(function MealRow({
   meal,
+  thumbUrl,
   deleting,
   onDelete,
+  onThumbError,
 }: {
   meal: MealCard;
+  thumbUrl: string | undefined;
   deleting: boolean;
   onDelete: () => void;
+  onThumbError: (path: string | null) => void;
 }) {
   return (
     <Card>
       <View style={styles.rowTop}>
+        <Thumbnail
+          // Keyed to the photo so a changed image_path remounts → `errored` resets.
+          key={meal.image_path ?? 'no-photo'}
+          uri={thumbUrl}
+          cacheKey={meal.image_path}
+          onError={() => onThumbError(meal.image_path)}
+        />
         <View style={styles.rowInfo}>
           <Text type="smallBold" numberOfLines={1}>
             {meal.dish_name}
@@ -287,6 +306,53 @@ function MealRow({
         )}
       </View>
     </Card>
+  );
+});
+
+/**
+ * Meal photo thumbnail (plan 0013). Always occupies a fixed 56×56 footprint so the
+ * row height never jumps. Renders a flat themed placeholder tile when there's no
+ * URL yet (null path / not-yet-minted / failed mint) or when the image errors
+ * (e.g. a 404'd object) — and reports that error up so the path isn't re-signed.
+ * The parent keys this component to `image_path`, so a changed photo remounts and
+ * `errored` resets — a recycled row recovers without a setState-in-effect. `cacheKey`
+ * keys expo-image's byte cache to the stable `image_path` (native), so the bytes
+ * survive signed-URL rotation; web ignores it (browser caches by URL).
+ */
+function Thumbnail({
+  uri,
+  cacheKey,
+  onError,
+}: {
+  uri: string | undefined;
+  cacheKey: string | null;
+  onError: () => void;
+}) {
+  const theme = useTheme();
+  const [errored, setErrored] = useState(false);
+
+  if (!uri || errored) {
+    return (
+      <View
+        style={[
+          styles.thumb,
+          styles.thumbPlaceholder,
+          { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+        ]}
+      />
+    );
+  }
+  return (
+    <Image
+      source={{ uri, cacheKey: cacheKey ?? undefined }}
+      style={styles.thumb}
+      contentFit="cover"
+      transition={120}
+      onError={() => {
+        setErrored(true);
+        onError();
+      }}
+    />
   );
 }
 
@@ -324,6 +390,15 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: Spacing.three,
+  },
+  thumb: {
+    width: THUMB_SIZE,
+    height: THUMB_SIZE,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  thumbPlaceholder: {
+    borderWidth: StyleSheet.hairlineWidth,
   },
   rowInfo: { flex: 1, gap: Spacing.half },
   macros: { marginTop: Spacing.two, gap: Spacing.half },

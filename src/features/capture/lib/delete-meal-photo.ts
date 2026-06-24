@@ -19,11 +19,11 @@
  */
 import { supabase } from '@/lib/supabase';
 
-const BUCKET = 'meal-photos';
+import { MEAL_PHOTOS_BUCKET } from './storage';
 
 export async function deleteMealPhoto(path: string): Promise<void> {
   try {
-    const { error } = await supabase.storage.from(BUCKET).remove([path]);
+    const { error } = await supabase.storage.from(MEAL_PHOTOS_BUCKET).remove([path]);
     if (error) {
       // Best-effort: the sweep reaps it later. Log message only, never the path.
       console.warn('[deleteMealPhoto] remove failed', error.message);

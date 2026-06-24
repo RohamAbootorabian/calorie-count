@@ -24,8 +24,9 @@
 import { supabase } from '@/lib/supabase';
 
 import type { PickedPhoto } from './pick-photo';
+import { MEAL_PHOTOS_BUCKET } from './storage';
 
-const BUCKET = 'meal-photos';
+const BUCKET = MEAL_PHOTOS_BUCKET;
 const MAX_BYTES = 10 * 1024 * 1024; // matches the bucket's 10 MB cap.
 const UPLOAD_TIMEOUT_MS = 45_000;
 
