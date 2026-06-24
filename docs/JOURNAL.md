@@ -1024,3 +1024,17 @@ valid; the deferred iPhone pass must confirm tz is honored.
 **user web-verified**. **Plan 0014 DONE.** Follow-ups: weekly/trend view, calorie ring
 (OQ1), quality nutrients on dashboard (OQ2), and the iPhone pass (now also covers native
 Intl tz-honoring).
+
+### Session 13 close — 2026-06-24
+Net: **two full plans shipped + one reviewed-and-approved**. 0013 (History photo
+thumbnails — signed URLs, expo-image cacheKey, first `createSignedUrl(s)` integration)
+and 0014 (daily totals dashboard — Home tab, first aggregate read; tz-correct via
+same-formatter date-string bucketing) both built, web-verified, and pushed. 0015 (edit
+a saved meal — first UPDATE surface) was **planned + 4-lens-reviewed + Approved** but
+**NOT executed** (session hit the context red zone). 0015's review cleared 2 blockers:
+dropped `updated_at` from the update RPC's SET list (an existing `set_updated_at` trigger
+owns it), and replaced the wavering not-found handling with a distinct `P0002` SQLSTATE +
+a dedicated `updateMeal` result type (no reused `conflict`/`id`). All 5 RLS policies the
+SECURITY-INVOKER `update_meal_log` RPC relies on were verified present. Tree clean, tsc
+green, all pushed. **Next session: execute plan 0015** (it includes a migration deploy —
+heavier than the recent pure-client plans).

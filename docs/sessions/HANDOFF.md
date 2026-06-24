@@ -3,56 +3,72 @@
 
 # Handoff → Next Session
 
-_Last updated: 2026-06-24 (session 12)_
+_Last updated: 2026-06-24 (session 13)_
 
 ## Where we are
-**No open plans — the tree is clean and all work is pushed.** Session 12 shipped two full plans end-to-end:
-**0011 Layer 2** (orphan-photo server sweep) is **deployed + verified in production**, and **0012**
-(meal History list + delete-meal flow) is **built + user-web-verified**. The app can now read back saved
-meals (the first DB-read surface) and a user can delete one (row + `meal_items` cascade + best-effort
-photo removal). `npx tsc --noEmit` passes; `expo lint` clean.
+**Plan 0015 (edit a saved meal) is Approved and waiting to be executed — that's the
+first thing to do next session.** This session shipped two full plans end-to-end: **0013**
+(History photo **thumbnails** — the app's first `createSignedUrl(s)` integration) and
+**0014** (daily totals **dashboard** on the Home tab — the first aggregate read, replacing
+the Expo starter screen). Both are built, **user-web-verified**, and pushed. The tree is
+clean, `npx tsc --noEmit` passes, `expo lint` is clean.
 
 ## What changed this session
-- **Plan 0011 DONE** — deployed the `cleanup-orphans` sweep: generated a 256-bit secret (Edge
-  `CLEANUP_SECRET` + Vault `cleanup_secret`, same value), `db push` (pg_cron 1.6.4 + pg_net 0.20.3 +
-  `cleanup_run`/`claim_cleanup_run` + daily cron `17 3 * * *`), `functions deploy`. Verified dry-run
-  (200/429/401), live planted-orphan deletion (deleted synthetic orphan, saved photo survives), and the
-  real cron command path (Vault subquery → `net.http_post` → 200, **no plaintext secret** in
-  `cron.job`/`net._http_*`). **DRY_RUN is now live (false); cron armed.** 0007 SF9 closed.
-- **Plan 0012 DONE** — new `history` feature: `useMealHistory` hook + `deleteMeal` primitive + History
-  screen; repurposed the starter Explore tab → History (renamed route + **both** tab files); updated
-  `privacy-content.ts` to disclose in-app per-meal deletion. **Zero backend work** (RLS delete policy +
-  `meal_items` cascade already existed). Review caught 2 blockers (missed `app-tabs.web.tsx`; privacy
-  policy contradiction) + dropped optimistic rollback for await-then-refetch.
+- **Plan 0013 DONE** — `useSignedThumbnails` (batch `createSignedUrls`, mint-on-set-change,
+  `userId`-keyed, retry-on-Refresh, 404 negative-cache) + a 56×56 `expo-image` thumbnail
+  (`cacheKey: image_path`) in each History row; flat placeholder. Centralized
+  `MEAL_PHOTOS_BUCKET`; extracted `src/lib/with-timeout.ts`. No migration.
+- **Plan 0014 DONE** — `useDailyTotals(tz)` (48 h bounded fetch + `useMemo(rows, tz)`
+  bucket via one hardcoded-`en-CA` `Intl` formatter; same-formatter date-string compare =
+  DST-safe) + `useDailyGoals` (narrow `Pick<>`, no body PII) + dashboard screen (guarded
+  `progressFor`, two-View bars, focus refetch). Home `(app)/index.tsx` → thin re-export.
+  No migration.
+- **Plan 0015 APPROVED (not executed)** — full plan + 4-lens review done; 2 blockers
+  resolved in the doc. Ready to build.
 
 ## Next steps (pick up here)
-**No queued task — start a fresh `/plan` for the next obligation.** Candidates (user's call):
-1. **Meal photo thumbnails** in the History list — needs the first `createSignedUrl(s)` integration
-   (private bucket) + TTL/caching. Natural fast-follow to 0012 (`src/features/history/screens/history-screen.tsx`).
-2. **Daily totals / dashboard** — make the Home tab (`src/app/(app)/index.tsx`, still Expo starter) show
-   today's calories/macros by aggregating `meal_logs`.
-3. **Meal edit** — edit a saved meal (review/edit-before-save already exists in `meal-review.tsx`).
-4. **Pagination** past `limit(100)` in `use-meal-history.tsx` (only when a user nears it).
-5. **Real-device pass** — test `Alert.alert` delete confirm + the 0007 real-camera path on the user's
-   iPhone 16 Pro Max (deferred, bundle them).
+1. **Execute plan 0015** — `docs/plans/0015-edit-meal.md` (status: Approved). Build order:
+   - New migration `supabase/migrations/<ts>_update_meal_log.sql` — atomic update RPC,
+     modeled on `20260623132156_create_meal_log.sql`. **Body order:** auth guard → item
+     count 1..50 → parent UPDATE (allowlisted cols, NO `updated_at`/`image_path`/`eaten_at`/
+     `user_id`/`verified`) + `GET DIAGNOSTICS ROW_COUNT` not-found → `raise … errcode
+     'P0002'` → delete children → re-insert children `with ordinality`.
+   - Client: `src/features/history/lib/use-meal-detail.tsx` (both-or-neither gate),
+     `update-meal.ts` (dedicated result type, `P0002`/`23503` → `not_found`),
+     `seedFormFromMealLog` in `src/features/capture/lib/meal-form.ts`, extract a shared
+     `MealEditorForm` from `meal-review.tsx` (move the assumptions block to read
+     `form.assumptions`), `edit-meal-screen.tsx`, root-guarded route `src/app/meal-edit.tsx`
+     + `<Stack.Screen name="meal-edit">` in `app/_layout.tsx` (inside the
+     `!!session && !needsOnboarding` guard), History Edit affordance + skip-first-focus
+     `useFocusEffect`. Optional shared `callMealRpc` primitive.
+   - **Deploy the migration** (`supabase db push`) — the one non-client step; verify the
+     function + grants like `create_meal_log`. Then `tsc`/`lint`/web-bundle + user verify.
+2. Other open candidates (user's call): meal photo **lightbox** (tap a thumbnail — 0013
+   left signed URLs ready), **weekly/trend** view (reuses `useDailyTotals` shape),
+   History **pagination** past `limit(100)`.
 
 ## Open questions / risks
-- **0011 cron not yet observed firing on schedule.** The path is proven (manual `net.http_post` → 200),
-  but `cron.job_run_details` only populates on the real 03:17 UTC tick. Optionally spot-check it next
-  session: `select * from cron.job_run_details order by start_time desc limit 5;` (Management API SQL,
-  project ref `vldpfoczswakghkrkyrm`). Not blocking.
-- **Secret hygiene (0011):** `CLEANUP_SECRET` (Edge) and Vault `cleanup_secret` must hold the SAME value —
-  rotate together; never paste into a committed file (the cron uses a live Vault subquery).
-- **Tracked obligations still open:** account/bulk self-serve deletion (privacy policy still routes it via
-  email `saba@heartharmona.com`); CORS prod origin + public-URL privacy mirror (move with a prod web
-  domain); custom SMTP; carry-through drift (0009); real-iPhone camera (0007); real tab art; OpenAI cap
-  N=50/user/day. Legal placeholders confirmed: COMPANY_NAME "Heart Harmona", CONTACT_EMAIL saba@heartharmona.com.
+- **0015 is the first DB migration since `create_meal_log`** — needs a `db push` to prod
+  (project ref `vldpfoczswakghkrkyrm`). Heavier than the recent pure-client plans; budget
+  a fresh session's context for it.
+- **Native `Intl` timeZone (0014)** — Hermes without full-ICU can *silently* ignore the
+  `timeZone` option (no throw → device-local bucket). Web is fine; the deferred iPhone
+  pass MUST confirm tz is honored on-device.
+- **Native `cacheKey` (0013)** — web ignores `expo-image` `cacheKey`; the real
+  byte-survival-across-rotation only matters on native — verify in the iPhone pass.
+- **0011 cron** still not observed firing on schedule (path proven manually); optional
+  spot-check `select * from cron.job_run_details order by start_time desc limit 5;`.
+- **Tracked obligations unchanged:** account/bulk self-serve deletion (still email-routed);
+  CORS prod origin + public-URL privacy mirror; custom SMTP; carry-through drift (0009);
+  real-iPhone pass (now also covers native Intl tz + cacheKey + the 0007 camera + 0012
+  delete confirm); real tab art; OpenAI cap N=50/user/day. Legal: COMPANY_NAME "Heart
+  Harmona", CONTACT_EMAIL saba@heartharmona.com.
 
 ## How to resume
-Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`. Work from
-`/Users/roham_abt/Desktop/calorie count` (quote the space). Build **sequentially on `main`** (commit
-straight, no PRs). **Converse in Persian.** Expo web dev server: `npx expo start --web --port 8081`
-(8081 is the only origin `_shared/cors.ts` allows). Edge functions use **Deno** (`deno check`/`deno lint`;
-URL-import `no-import-prefix` warning is a harmless convention). Supabase CLI is authed via the macOS
-keychain (`security find-generic-password -s "Supabase CLI" -w`), not a token file; Vault/verification SQL
-goes through the Management API `database/query` endpoint; project ref `vldpfoczswakghkrkyrm`.
+Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`.
+Work from `/Users/roham_abt/Desktop/calorie count` (quote the space). Build **sequentially
+on `main`** (commit straight, no PRs). **Converse in Persian.** Expo web dev server:
+`npx expo start --web --port 8081` (8081 is the only origin `_shared/cors.ts` allows);
+web-verify compiles via `expo-router/entry.bundle?platform=web` (HTTP 200, zero `*Error`).
+Supabase CLI authed via the macOS keychain; migrations/verification SQL go through the
+Management API; project ref `vldpfoczswakghkrkyrm`. Edge functions use **Deno**.
