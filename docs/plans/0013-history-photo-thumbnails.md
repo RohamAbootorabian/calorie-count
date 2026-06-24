@@ -1,6 +1,6 @@
 # Plan: Meal photo thumbnails in History
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → **In Progress** (code-complete, pending user web-verify) → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user web-verified 2026-06-24)
 - **Created**: 2026-06-24
 - **Plan #**: 0013
 
@@ -351,6 +351,7 @@ plan; no design deviations.
 
 **Verified:** `npx tsc --noEmit` PASS; `npx expo lint` clean (0 problems); web
 bundle compiles — `expo-router/entry.bundle?platform=web` returns HTTP 200, ~8 MB,
-zero `*Error` objects. **Pending: user web-verify** in a logged-in browser (thumbnails
-render; placeholder for no-photo; one `createSignedUrls` per path set; Refresh reuses
-URLs). Native cacheKey-survival test rides the deferred 0007/0012 iPhone pass.
+zero `*Error` objects. **User web-verified 2026-06-24** in a logged-in browser
+(thumbnails render; placeholder for no-photo; one `createSignedUrls` per path set;
+Refresh reuses URLs; delete unaffected). **Plan 0013 DONE.** Native
+cacheKey-survival test rides the deferred 0007/0012 iPhone pass.

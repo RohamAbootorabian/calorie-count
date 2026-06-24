@@ -934,3 +934,55 @@ gained its first `meal_logs` READ surface (History tab, repurposed from the star
 self-serve per-meal delete (row + cascade + best-effort photo removal). No open plans; tree clean; tsc +
 lint green; all pushed. Next session starts a fresh `/plan` (candidates in HANDOFF: thumbnails, dashboard,
 meal edit, pagination, real-device pass).
+
+### Session 13 — 2026-06-24 · Plan 0013 History photo thumbnails → DONE
+Picked the natural fast-follow to 0012 (HANDOFF candidate 1): show each saved meal's
+photo in the History list. The `meal-photos` bucket is **private**, so a row's
+`image_path` isn't directly loadable — this is the project's **first
+`createSignedUrl(s)` integration**, the pattern Daily-totals/Meal-edit will reuse.
+
+**Plan + review:** wrote plan 0013; the 4-lens review surfaced **5 blockers** —
+(B1) exact `createSignedUrls` result shape + the `error:null / signedUrl:null` trap;
+(B2) no timeout on the mint (every sibling helper has one); (B3) empty-array call
+guard; (B4) the verify plan over-claimed `expo-image` `cacheKey` on **web** (web
+ignores it — `<img src=uri>`, caches by URL); (B5) *assumed* a Storage SELECT policy.
+The data reviewer **verified B5 away**: `meal_photos_select` already exists
+(`20260619102510_initial_schema.sql:222`) — signing authorizes against SELECT (a
+*distinct* policy from 0011's DELETE), so no migration. The headline should-fix
+**dissolved the design**: drop the ref-backed expiry cache + `REFRESH_MARGIN_MS`
+(and its inverted/units-mixed math) for **mint-on-set-change** — `cacheKey` already
+makes the bytes survive URL rotation on native, so per-URL expiry tracking bought
+nothing. All folded → Approved.
+
+**Built (no design deviation):** `useSignedThumbnails(meals)` — derived state over
+the 0012 `MealCard[]` (never queries `meal_logs`); one batch `createSignedUrls(paths,
+3600)` for the distinct non-null paths (never per-row), empty-guard, 30 s
+`withTimeout`, exact result handling (write only `error==null && path && signedUrl`),
+URL map in `useState` **keyed to `userId`** (a fast user-switch can't surface user
+A's URLs), **retry-on-Refresh** (effect deps `[userId, paths]`; `paths` gets a fresh
+identity each refetch so a failed/offline mint re-attempts, while a steady re-render
+mints nothing), **404 negative-cache** via `reportError`, and in-memory-only +
+no-path/url logging (a signed URL is a bearer token for a private health photo; TTL
+locked at 1 h). History screen: `MealRow` now `React.memo`'d with a leading 56×56
+`Thumbnail` (expo-image, `cacheKey: image_path`, transition + `onError` → flat themed
+placeholder tile + `reportError`); a flat tile holds the same footprint when there's
+no URL so the row never jumps. Centralized `MEAL_PHOTOS_BUCKET` (was triplicated) and
+extracted a shared `withTimeout` util.
+
+**Two within-intent implementation choices:** (1) reset the row's `errored` flag via
+`<Thumbnail key={image_path}>` remount instead of a `useEffect(setErrored)` — the
+effect form tripped `react-hooks/set-state-in-effect`; same behavior, lint-clean.
+(2) `entryRef` synced in an effect (declared before the mint effect), not during
+render (`react-hooks/refs`).
+
+**Why no backend work:** `image_path` was already in the `MealCard` allowlist (0012)
+and `meal_photos_select` already authorizes signing — zero migration.
+
+**Verified:** `npx tsc --noEmit` PASS; `npx expo lint` clean; web bundle compiles
+(`expo-router/entry.bundle?platform=web` → HTTP 200, ~8 MB, zero `*Error`); **user
+web-verified** the full flow (thumbnails render; placeholder for no-photo; one
+`createSignedUrls` per path set; Refresh reuses URLs; delete unaffected). **Plan 0013
+DONE.** Follow-ups still open: tap-to-enlarge/lightbox (OQ4, non-goal here),
+pagination past 100, meal **edit**, daily totals/dashboard, account/bulk self-serve
+deletion (still email-routed), real-device pass (now also covers the native
+cacheKey-survival test), real tab art.
