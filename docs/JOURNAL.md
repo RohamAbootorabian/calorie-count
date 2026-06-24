@@ -926,3 +926,11 @@ Updated `privacy-content.ts` to disclose in-app per-meal deletion (B2).
 web-verified** the full flow in a logged-in browser. **Plan 0012 DONE.** Follow-ups still open: photo
 thumbnails (signed URLs), pagination past 100, meal **edit**, daily totals/dashboard, account/bulk
 self-serve deletion (still email-routed), real-device pass, real tab art.
+
+### Session 12 close — 2026-06-24
+Net: **two full plans shipped** — 0011 Layer 2 (orphan-cleanup sweep deployed + verified in production;
+DRY_RUN now live, cron armed) and 0012 (meal History list + delete-meal flow, user web-verified). The app
+gained its first `meal_logs` READ surface (History tab, repurposed from the starter Explore tab) and a
+self-serve per-meal delete (row + cascade + best-effort photo removal). No open plans; tree clean; tsc +
+lint green; all pushed. Next session starts a fresh `/plan` (candidates in HANDOFF: thumbnails, dashboard,
+meal edit, pagination, real-device pass).
