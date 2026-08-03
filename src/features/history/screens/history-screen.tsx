@@ -31,11 +31,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomTabInset, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useUser } from '@/lib/auth';
 import { Button, Card, Text } from '@/shared/ui';
 
 import { deleteMeal } from '../lib/delete-meal';
 import { HISTORY_LIMIT, useMealHistory, type MealCard } from '../lib/use-meal-history';
 import { useSignedThumbnails } from '../lib/use-signed-thumbnails';
+import { PhotoLightbox } from './photo-lightbox';
 
 /** Fixed thumbnail footprint — always reserved so the row height never jumps. */
 const THUMB_SIZE = 56;
@@ -60,11 +62,20 @@ export default function HistoryScreen() {
   const { loading, meals, error, refetch } = useMealHistory();
   const { urlFor, reportError } = useSignedThumbnails(meals);
   const insets = useSafeAreaInsets();
+  const { user } = useUser();
+  const userId = user?.id ?? null;
 
   // Ids whose delete is in flight — gates the confirm dialog AND the call.
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(new Set());
   // True after a delete fails (transient/unknown) — a non-PII inline notice.
   const [deleteFailed, setDeleteFailed] = useState(false);
+  // The full-screen photo viewer (plan 0016), or null when closed. Holds the
+  // already-minted signed URL in memory only — never serialized into a route. KEYED
+  // to the `userId` it was opened for: a render-time guard (not an effect) hides it
+  // the instant the user changes, so a sign-out can't leave user A's signed URL on
+  // screen (mirrors useSignedThumbnails' userId-keyed map; "derive, don't effect").
+  const [lightbox, setLightbox] =
+    useState<{ url: string; cacheKey: string; userId: string } | null>(null);
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -151,6 +162,7 @@ export default function HistoryScreen() {
   const atLimit = meals.length >= HISTORY_LIMIT;
 
   return (
+    <>
     <FlatListContainer
       insetTop={insets.top}
       data={meals}
@@ -188,17 +200,37 @@ export default function HistoryScreen() {
           </Text>
         </View>
       }
-      renderItem={(meal) => (
-        <MealRow
-          meal={meal}
-          thumbUrl={urlFor(meal.image_path)}
-          deleting={deletingIds.has(meal.id)}
-          onEdit={() => router.push({ pathname: '/meal-edit', params: { id: meal.id } })}
-          onDelete={() => confirmThenDelete(meal)}
-          onThumbError={reportError}
+      renderItem={(meal) => {
+        // Compute the signed URL ONCE; reuse it for both the thumbnail and the
+        // lightbox gate. `thumbUrl && path` narrows both to non-null, so the photo
+        // opens only when there's a real URL (placeholder rows stay inert).
+        const thumbUrl = urlFor(meal.image_path);
+        const path = meal.image_path;
+        return (
+          <MealRow
+            meal={meal}
+            thumbUrl={thumbUrl}
+            deleting={deletingIds.has(meal.id)}
+            onEdit={() => router.push({ pathname: '/meal-edit', params: { id: meal.id } })}
+            onPressPhoto={
+              thumbUrl && path && userId
+                ? () => setLightbox({ url: thumbUrl, cacheKey: path, userId })
+                : undefined
+            }
+            onDelete={() => confirmThenDelete(meal)}
+            onThumbError={reportError}
+          />
+        );
+      }}
+    />
+      {lightbox && lightbox.userId === userId && (
+        <PhotoLightbox
+          url={lightbox.url}
+          cacheKey={lightbox.cacheKey}
+          onClose={() => setLightbox(null)}
         />
       )}
-    />
+    </>
   );
 }
 
@@ -274,6 +306,7 @@ const MealRow = memo(function MealRow({
   thumbUrl,
   deleting,
   onEdit,
+  onPressPhoto,
   onDelete,
   onThumbError,
 }: {
@@ -281,19 +314,30 @@ const MealRow = memo(function MealRow({
   thumbUrl: string | undefined;
   deleting: boolean;
   onEdit: () => void;
+  /** Provided only when the photo has a minted URL → the thumbnail is tappable. */
+  onPressPhoto?: () => void;
   onDelete: () => void;
   onThumbError: (path: string | null) => void;
 }) {
+  const thumbnail = (
+    <Thumbnail
+      // Keyed to the photo so a changed image_path remounts → `errored` resets.
+      key={meal.image_path ?? 'no-photo'}
+      uri={thumbUrl}
+      cacheKey={meal.image_path}
+      onError={() => onThumbError(meal.image_path)}
+    />
+  );
   return (
     <Card>
       <View style={styles.rowTop}>
-        <Thumbnail
-          // Keyed to the photo so a changed image_path remounts → `errored` resets.
-          key={meal.image_path ?? 'no-photo'}
-          uri={thumbUrl}
-          cacheKey={meal.image_path}
-          onError={() => onThumbError(meal.image_path)}
-        />
+        {onPressPhoto ? (
+          <Pressable onPress={onPressPhoto} accessibilityRole="button" accessibilityLabel="View photo">
+            {thumbnail}
+          </Pressable>
+        ) : (
+          thumbnail
+        )}
         <View style={styles.rowInfo}>
           <Text type="smallBold" numberOfLines={1}>
             {meal.dish_name}

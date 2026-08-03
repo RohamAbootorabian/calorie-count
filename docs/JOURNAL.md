@@ -1097,3 +1097,32 @@ not `null` (legacy-row edge, within "carried-through" tolerance, passes the colu
 **Verified:** `tsc` PASS; `expo lint` clean; web bundles HTTP 200 + valid JS (edit chain
 present); migration applied + verified in prod; **user web-verified** (seed/edit/persist,
 remove item, today-meal dashboard reflect, over-cap block, create-flow regression). DONE.
+
+---
+
+## Plan 0016 — Photo lightbox (full-screen meal photo)
+
+**What.** Tapping a History thumbnail that has a minted signed URL now opens a
+full-screen, aspect-correct view of that meal's photo; the ✕, a backdrop tap, and
+Android hardware-back all dismiss it. Placeholder rows (no photo) stay inert.
+
+**Why.** History thumbnails are 56×56 (plan 0013) — detail is lost. This gives a
+larger look with **zero new fetch / no migration**: it reuses the in-memory signed
+URL `useSignedThumbnails.urlFor` already minted for the thumbnail, so it adds no
+storage call in the common case and inherits 0013's privacy posture.
+
+**How.** New presentational `photo-lightbox.tsx` — a bare RN `Modal` (not the
+`<Screen>` primitive, which clamps width/insets) with a fixed dark scrim backdrop
+`Pressable`, an `expo-image` `contentFit="contain"` source `key`ed on `cacheKey`
+(= `image_path`, so native reuses the thumbnail's cached bytes) wrapped in its own
+no-op `Pressable` so a tap on the photo doesn't bubble to the backdrop, and a themed
+✕ in the top safe-area inset. No spinner / `onError` / inline-error (review B1 — a
+failed decode just shows the scrim, still dismissible; the thumbnail's own
+`onError`→`reportError` remains the sole negative-cache path). History wiring reuses
+the single `thumbUrl` for both the tappable gate and the URL, holds one `lightbox`
+state, and closes it on `userId` change so a sign-out never leaves user A's URL
+viewable. The signed URL never enters route params — it lives only as an in-memory
+prop.
+
+**Verified.** `tsc` PASS; `expo lint` clean; web bundle on :8081; user web-verified.
+Native back / light StatusBar / VoiceOver-modal ride the deferred iPhone pass. DONE.
