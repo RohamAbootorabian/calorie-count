@@ -1,6 +1,6 @@
 # Plan: Web app — separate repo bootstrap (Next.js on the shared backend)
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → **In Progress** (user verify pending) → Done
 - **Created**: 2026-06-30
 - **Plan #**: 0017
 
@@ -388,5 +388,26 @@ copy deferred to follow-ups. With those edits applied above, the plan is **APPRO
 execution.
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+Built per the approved plan in the new sibling repo
+**`/Users/roham_abt/Desktop/calorie-count-web`** (own `git init`, `main`).
+`create-next-app` (Next **16.3.0**, App Router, TS, Tailwind, `src/`, `@/*`) +
+`@supabase/ssr`/`@supabase/supabase-js`. Files: `src/lib/env.ts` (fail-fast, SF10);
+`src/lib/supabase/{client,server}.ts` typed `<Database>`, server `setAll` try/catch
+no-op for RSC (SF8); session-refresh interceptor; `(auth)/actions.ts` +
+`sign-in`/`sign-up` screens (sign-up → "check your email", B2; `email_not_confirmed`
+→ Resend, SF7); `(app)/layout.tsx` gated on `getUser()` (SF3) + server-action sign-out
+(no token across RSC→Client, SF11); `(app)/history/page.tsx` reads `meal_logs` with
+column allowlist + `.eq('user_id', user.id)` + `.limit(100)` + error branch (SF4/5/9);
+`database.ts` copied from mobile (no `nutrition.ts`, no hand-written `meal-log.ts`);
+root `/` → `/history`; `.nvmrc` (24), `.env.local` (git-ignored; `!.env.example`
+committed), README.
+
+**Deviation (accepted):** Next **16** deprecated the `middleware` file convention in
+favor of **`proxy`** — renamed `src/middleware.ts` → `src/proxy.ts`, `export function
+proxy` (same @supabase/ssr session-refresh wiring + matcher). Build is warning-free.
+
+**Verified:** `tsc --noEmit` PASS; `next lint` clean; `next build` green (routes `/`,
+`/sign-in`, `/sign-up`, ƒ `/history`, ƒ Proxy); no secret/service-role in tracked files;
+`.env.local` confirmed git-ignored. Committed to the web repo's `main` (`fc473d1`).
+**PENDING: user browser-verify** (sign-in + non-empty own-history + isolation) before
+flipping to Done. GitHub remote push deferred (OQ2 — confirm first).
