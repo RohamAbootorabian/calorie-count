@@ -1,6 +1,11 @@
 # Plan: Web app — separate repo bootstrap (Next.js on the shared backend)
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → **In Progress** (user verify pending) → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **ABANDONED (2026-08-04)**
+- **Abandoned**: The separate web-app direction was dropped by product decision — we
+  refocused on the mobile app. The standalone `calorie-count-web` repo (Next.js, never
+  pushed to a remote) was **deleted from disk**. This plan is kept for the record only;
+  do not execute it. The shared Supabase backend was never modified, so nothing needs
+  reverting there. If a web client is ever revisited, start a fresh plan.
 - **Created**: 2026-06-30
 - **Plan #**: 0017
 
