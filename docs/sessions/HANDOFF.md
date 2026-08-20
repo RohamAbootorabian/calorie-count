@@ -3,54 +3,48 @@
 
 # Handoff → Next Session
 
-_Last updated: 2026-06-24 (session 13)_
+_Last updated: 2026-08-04 (session 18)_
 
 ## Where we are
-**Plan 0015 (edit a saved meal) is Approved and waiting to be executed — that's the
-first thing to do next session.** This session shipped two full plans end-to-end: **0013**
-(History photo **thumbnails** — the app's first `createSignedUrl(s)` integration) and
-**0014** (daily totals **dashboard** on the Home tab — the first aggregate read, replacing
-the Expo starter screen). Both are built, **user-web-verified**, and pushed. The tree is
-clean, `npx tsc --noEmit` passes, `expo lint` is clean.
+**Plans 0015 (edit a saved meal) and 0016 (photo lightbox) are both DONE, built,
+user-web-verified, and pushed.** The tree is clean, `npx tsc --noEmit` passes, `expo lint`
+is clean. Latest shipped feature = the full-screen photo lightbox. The next mobile feature
+chosen is **plan 0018 (weekly calorie trend)** — its plan doc is written and **Approved**
+(4-lens review done, 1 blocker resolved) but **not yet executed**.
 
-## What changed this session
-- **Plan 0013 DONE** — `useSignedThumbnails` (batch `createSignedUrls`, mint-on-set-change,
-  `userId`-keyed, retry-on-Refresh, 404 negative-cache) + a 56×56 `expo-image` thumbnail
-  (`cacheKey: image_path`) in each History row; flat placeholder. Centralized
-  `MEAL_PHOTOS_BUCKET`; extracted `src/lib/with-timeout.ts`. No migration.
-- **Plan 0014 DONE** — `useDailyTotals(tz)` (48 h bounded fetch + `useMemo(rows, tz)`
-  bucket via one hardcoded-`en-CA` `Intl` formatter; same-formatter date-string compare =
-  DST-safe) + `useDailyGoals` (narrow `Pick<>`, no body PII) + dashboard screen (guarded
-  `progressFor`, two-View bars, focus refetch). Home `(app)/index.tsx` → thin re-export.
-  No migration.
-- **Plan 0015 APPROVED (not executed)** — full plan + 4-lens review done; 2 blockers
-  resolved in the doc. Ready to build.
+## What changed recently
+- **Plan 0015 DONE** — edit a previously-saved meal (first UPDATE surface): `update_meal_log`
+  RPC migration (deployed), `useMealDetail` + `seedFormFromMealLog`, shared `MealEditorForm`
+  extracted from `meal-review`, `edit-meal-screen` + guarded `meal-edit` route, History Edit
+  affordance.
+- **Plan 0016 DONE** — full-screen photo lightbox: tap a History thumbnail (with a minted
+  signed URL) → aspect-correct full-screen view; ✕ / backdrop / Android-back dismiss. Pure
+  client, no migration; reuses the in-memory `useSignedThumbnails` URL.
+- **Plan 0017 ABANDONED** — a brief spike to build a separate Next.js **web** repo on the
+  shared backend was explored, then dropped by product decision to refocus on mobile; the
+  standalone `calorie-count-web` folder was deleted. Plan kept for the record only.
+- **Plan 0018 APPROVED (not executed)** — weekly calorie trend (7-day bar chart + weekly
+  averages), a pure-client widening of `useDailyTotals`. Plan + review done; ready to build.
+- **Docs reconciliation (2026-08-04)** — aligned all living docs with the code's real AI
+  model (**OpenAI `gpt-4o-mini`**, not Claude/Gemini); added ADR-0003; see the latest
+  JOURNAL entry.
 
 ## Next steps (pick up here)
-1. **Execute plan 0015** — `docs/plans/0015-edit-meal.md` (status: Approved). Build order:
-   - New migration `supabase/migrations/<ts>_update_meal_log.sql` — atomic update RPC,
-     modeled on `20260623132156_create_meal_log.sql`. **Body order:** auth guard → item
-     count 1..50 → parent UPDATE (allowlisted cols, NO `updated_at`/`image_path`/`eaten_at`/
-     `user_id`/`verified`) + `GET DIAGNOSTICS ROW_COUNT` not-found → `raise … errcode
-     'P0002'` → delete children → re-insert children `with ordinality`.
-   - Client: `src/features/history/lib/use-meal-detail.tsx` (both-or-neither gate),
-     `update-meal.ts` (dedicated result type, `P0002`/`23503` → `not_found`),
-     `seedFormFromMealLog` in `src/features/capture/lib/meal-form.ts`, extract a shared
-     `MealEditorForm` from `meal-review.tsx` (move the assumptions block to read
-     `form.assumptions`), `edit-meal-screen.tsx`, root-guarded route `src/app/meal-edit.tsx`
-     + `<Stack.Screen name="meal-edit">` in `app/_layout.tsx` (inside the
-     `!!session && !needsOnboarding` guard), History Edit affordance + skip-first-focus
-     `useFocusEffect`. Optional shared `callMealRpc` primitive.
-   - **Deploy the migration** (`supabase db push`) — the one non-client step; verify the
-     function + grants like `create_meal_log`. Then `tsc`/`lint`/web-bundle + user verify.
-2. Other open candidates (user's call): meal photo **lightbox** (tap a thumbnail — 0013
-   left signed URLs ready), **weekly/trend** view (reuses `useDailyTotals` shape),
-   History **pagination** past `limit(100)`.
+1. **Execute plan 0018** — `docs/plans/0018-weekly-trend.md` (status: Approved). A
+   pure-client 7-day calorie trend: a co-located `useWeeklyTotals` (widened clone of
+   `useDailyTotals` — same `.eq('user_id')` + `Pick<>` allowlist; 8-day window; day-keys +
+   weekday labels from a noon-UTC seed via UTC accessors only, per review B1) + a
+   `trend-screen` (7 local bars + plain-Text weekly averages) + a `trends` route registered
+   next to `meal-edit` + a "Weekly trend" button on the dashboard. No migration. Extract the
+   shared `makeDayFormatter` from `use-daily-totals.tsx`.
+2. Other open candidates (user's call): History **pagination** past `limit(100)`; the
+   deferred **real-iPhone pass** (native `Intl` tz + `cacheKey` + 0007 camera + 0012 delete
+   confirm); per-macro trend / goal-overlay follow-ups named in plan 0018.
 
 ## Open questions / risks
-- **0015 is the first DB migration since `create_meal_log`** — needs a `db push` to prod
-  (project ref `vldpfoczswakghkrkyrm`). Heavier than the recent pure-client plans; budget
-  a fresh session's context for it.
+- **0015's `update_meal_log` migration is already deployed** to prod (project ref
+  `vldpfoczswakghkrkyrm`). The next planned work (0018 weekly trend) is pure-client — no
+  new migration.
 - **Native `Intl` timeZone (0014)** — Hermes without full-ICU can *silently* ignore the
   `timeZone` option (no throw → device-local bucket). Web is fine; the deferred iPhone
   pass MUST confirm tz is honored on-device.

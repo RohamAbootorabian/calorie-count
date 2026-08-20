@@ -1,7 +1,7 @@
 /**
  * `analyze-meal` Edge Function (plan 0008, S2 piece 2).
  *
- * Realises the core architecture rule: the phone NEVER calls Gemini. Given a
+ * Realises the core architecture rule: the phone NEVER calls OpenAI. Given a
  * Storage `{ path }` from a signed-in user, this:
  *   1. verifies the caller (JWT → `getUser()`; the anon key is itself a valid
  *      JWT, so `getUser()` — not `verify_jwt` — is the real anonymous gate),
@@ -9,7 +9,7 @@
  *      the bucket RLS (`foldername[1] = auth.uid()`) is the load-bearing
  *      authorization (never the regex; we never use the service-role key),
  *   3. bounds per-user daily cost (B6), downloads the bytes, calls OpenAI
- *      (GPT-4o vision) with structured output, validates/coerces the JSON
+ *      (GPT-4o-mini vision) with structured output, validates/coerces the JSON
  *      into a `MealAnalysis`, and returns it.
  *
  * ERROR CONTRACT (B1): this ALWAYS returns HTTP 200 with `{ ok, kind }` for

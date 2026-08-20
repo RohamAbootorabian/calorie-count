@@ -8,7 +8,7 @@ sessions. Pairs with [MODULES.md](MODULES.md) (rules) and [WORKFLOW.md](WORKFLOW
 ```mermaid
 graph TD
   subgraph EXT[External]
-    G([Gemini 2.5 Flash · vision])
+    G([OpenAI GPT-4o-mini · vision])
   end
 
   subgraph BE[Supabase Backend]
@@ -80,7 +80,7 @@ sessions never need to touch it.
 ### S2 — Capture & AI Analysis _(the core / highest risk)_
 | Owns | Scope | Starts when |
 |---|---|---|
-| `src/features/capture/` + `supabase/functions/analyze-meal/` | camera/upload → Storage upload → `analyze-meal` Edge Function (Gemini) → **editable results** → save meal. Includes the accuracy eval. | Phase A merged |
+| `src/features/capture/` + `supabase/functions/analyze-meal/` | camera/upload → Storage upload → `analyze-meal` Edge Function (OpenAI) → **editable results** → save meal. Includes the accuracy eval. | Phase A merged |
 | Tables / infra | `meal_logs`, `meal_items`, Storage, `MealAnalysis` | |
 
 ### S3 — Diary & Tracking

@@ -1126,3 +1126,42 @@ prop.
 
 **Verified.** `tsc` PASS; `expo lint` clean; web bundle on :8081; user web-verified.
 Native back / light StatusBar / VoiceOver-modal ride the deferred iPhone pass. DONE.
+
+---
+
+## 2026-08-04 — Docs reconciled: AI model is OpenAI `gpt-4o-mini` (not Claude)
+
+**What.** Swept the repo for stale AI-provider references and aligned every *living*
+doc with the code, which is the source of truth. Ground truth (verified in code, not
+prose): `supabase/functions/analyze-meal/openai.ts` → `const MODEL = "gpt-4o-mini"`,
+endpoint `api.openai.com`, secret `OPENAI_API_KEY` (`index.ts:96`).
+
+**Why this entry exists.** This journal is append-only, so rather than rewrite the
+kickoff/step-1 entries (which correctly record the decision *as it was then*), this
+note supersedes them. The provider actually evolved **Claude (ADR-0001 assumption,
+never built) → Gemini 2.5 Flash (kickoff/step 1) → OpenAI `gpt-4o-mini` (plan 0008,
+2026-06-23)**. The Gemini→OpenAI switch is already documented in the Session 9 (cont.)
+entry above and was driven by OpenAI's no-training-by-default API terms resolving the
+free-Gemini-tier privacy risk (B5). What was missing was consistency in the docs that
+readers treat as *current* truth.
+
+**Changed (docs/comments only — no code behavior touched; `MODEL` left untouched):**
+- `README.md` — Tech-stack row + golden rule "Claude" → "OpenAI GPT-4o-mini"; project
+  structure "analyze-meal (to be created)" → deployed, + `cleanup-orphans`/`migrations`;
+  MVP roadmap all five ticked (verified in code) + a new "Also shipped" list (delete,
+  thumbnails, lightbox, edit-saved-meal, in-app privacy, orphan cleanup); Getting-started
+  gained the real Supabase backend steps (`link`/`db push`/`functions deploy`/`secrets set`).
+- `CLAUDE.md` — "GPT-4o vision" → "GPT-4o-mini vision" (×2).
+- `.env.example` — the note's `ANTHROPIC_API_KEY` → `OPENAI_API_KEY` (warning kept).
+- `supabase/functions/analyze-meal/index.ts` — header comment "NEVER calls Gemini" →
+  "OpenAI"; "GPT-4o vision" → "GPT-4o-mini vision".
+- `docs/ARCHITECTURE.md` — mermaid node + capture row "Gemini" → "OpenAI GPT-4o-mini".
+- `docs/decisions/0001-tech-stack.md` — added a "Superseded in part" pointer on the AI
+  line (original text kept); new **`docs/decisions/0003-ai-provider.md`** records the
+  current provider decision + the full Claude→Gemini→OpenAI history and rationale.
+- `docs/sessions/HANDOFF.md` — refreshed to real status (0015 + 0016 shipped).
+
+**Deliberately NOT changed (historical execution records — like this journal, they
+capture what was true at the time; rewriting them would falsify history):** the plan
+docs `0001`/`0007`/`0008` still reference Claude/Gemini in their point-in-time text.
+ADR-0003 + this entry carry the current truth; the plans stay as-built.

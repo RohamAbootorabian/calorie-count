@@ -15,6 +15,11 @@ Team background is JS/TypeScript/React. Launch target: iOS + Android.
   Functions). One managed platform, near-zero ops, row-level security for health data.
 - **AI (photo → nutrition):** Claude vision, invoked from a Supabase Edge Function
   that forces a structured JSON response matching `MealAnalysis`.
+  > **⚠️ Superseded in part by [ADR 0003 — AI provider](0003-ai-provider.md).** The
+  > *provider/model* choice here (Claude vision) was later changed — first to Gemini
+  > 2.5 Flash, then to **OpenAI `gpt-4o-mini` vision** (the live model). The rest of
+  > this ADR (Expo, Supabase, the Edge-Function boundary, USDA reference) still holds.
+  > Original text kept intact for the record.
 - **Nutrition reference:** USDA FoodData Central (free) to cross-check known items.
 
 ## Why not the alternatives
