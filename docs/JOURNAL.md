@@ -1165,3 +1165,30 @@ readers treat as *current* truth.
 capture what was true at the time; rewriting them would falsify history):** the plan
 docs `0001`/`0007`/`0008` still reference Claude/Gemini in their point-in-time text.
 ADR-0003 + this entry carry the current truth; the plans stay as-built.
+
+---
+
+## 2026-08-26 — Plan 0018 executed: weekly calorie trend (verify pending)
+
+**What.** A new "Weekly trend" screen (reached from a button on the Home dashboard):
+7 vertical bars of daily calories for the last 7 local-calendar days (oldest→newest,
+weekday-labelled, today highlighted) + a weekly-average card (avg daily calories + avg
+P/C/F over LOGGED days only). Pure client, read-only, no migration, no new dependency.
+
+**Why.** The dashboard only showed *today*; the most-requested signal is "am I trending
+up or down this week?" This reuses 0014's exact `meal_logs`/tz machinery widened from a
+48 h "today" window to an 8-day 7-bucket window.
+
+**How.** Extracted the shared `makeDayFormatter` (`day-formatter.ts`) so both the daily
+and weekly hooks import it. New `useWeeklyTotals(tz)` clones 0014's keyed-outcome /
+`.eq('user_id')` / `Pick<>`-allowlist machinery; its one subtlety (review B1) is that the
+7 day-keys AND weekday labels are derived from a noon-UTC seed via UTC accessors only
+(`toISOString().slice(0,10)` + `WEEKDAY_LABELS[getUTCDay()]`) — never a second tz
+formatter — so an invalid tz can't crash and extreme zones can't drift the label off its
+bar; keys+labels regenerate inside the `useMemo([rows,tz])`. The screen mirrors the
+dashboard's gate order with a LOCAL height-% bar component (no chart lib, no shared `Bar`)
+and a plain-`Text` average summary (no `MetricBar` — that's goal-progress). Registered as
+a guarded root `Stack.Screen` over the tabs (the `meal-edit` precedent).
+
+**Verified.** `tsc` exit 0; `expo lint` clean; web bundle HTTP 200 · 3.9 MB · complete.
+User web-verify pending before Done. Native `Intl` tz rides the deferred iPhone pass.

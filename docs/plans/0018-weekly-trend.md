@@ -1,6 +1,6 @@
 # Plan: Weekly calorie trend view
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → **In Progress** (user web-verify pending) → Done
 - **Created**: 2026-08-04
 - **Plan #**: 0018
 
@@ -308,5 +308,30 @@ resolved together with the correctness/edge cluster by the single decision to de
 `makeDayFormatter`). With the edits applied above, **APPROVED** for execution.
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+Built exactly per the approved plan. Files:
+- `features/dashboard/lib/day-formatter.ts` (NEW) — extracted the shared `makeDayFormatter`
+  (`en-CA`/tz/try-catch-UTC-fallback); `use-daily-totals.tsx` now imports it (behavior
+  unchanged, its local copy removed).
+- `features/dashboard/lib/use-weekly-totals.tsx` (NEW) — widened clone of 0014: 8-day
+  window; keys + weekday labels from a noon-UTC seed via UTC accessors only
+  (`toISOString().slice(0,10)` + `WEEKDAY_LABELS[getUTCDay()]`, no second formatter — B1/SF1);
+  keys+labels regenerated inside the `useMemo([rows,tz])` (SF2); same `.eq('user_id')` +
+  `Pick<>` allowlist + `error||data==null → error` (SF4/SF5); returns `DayTotals[]` (7,
+  oldest→newest).
+- `features/dashboard/screens/trend-screen.tsx` (NEW) — mirrors the dashboard gates; a LOCAL
+  7-bar chart (height-%, `primary`, newest full-opacity / older `opacity:0.45` — SF3) + a
+  plain-`Text` weekly-average summary (calories + P/C/F avg over LOGGED days only, labelled);
+  uses the shared `Screen scroll` primitive.
+- `app/trends.tsx` (NEW) + `_layout.tsx` — `<Stack.Screen name="trends">` inside the
+  signed-in+onboarded guard, next to `meal-edit`.
+- `dashboard-screen.tsx` — a `Button variant="secondary"` "Weekly trend →" after the macros
+  card → `router.push('/trends')`.
+
+**Deviation (minor):** plan §3 line still named the re-export target `features/trends/...`;
+implemented per SF4 as `@/features/dashboard/screens/trend-screen` (co-located). No behavior
+change.
+
+**Verified:** `tsc --noEmit` exit 0; `expo lint` clean; web bundle HTTP 200 · 3.9 MB ·
+complete (sourcemap tail) with the new screen/hook. **PENDING: user web-verify** (7 bars +
+weekly averages + empty/regression) before flipping to Done. Native `Intl` tz bucketing
+rides the deferred iPhone pass.

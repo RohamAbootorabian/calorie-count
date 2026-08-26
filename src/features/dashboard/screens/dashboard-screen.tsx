@@ -17,7 +17,7 @@
  * Refetch-on-focus (totals + goals) so logging a meal or editing a goal reflects on
  * return to Home. Numbers are plain rounded integers (matches the History screen).
  */
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { ActivityIndicator, type DimensionValue, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -135,6 +135,11 @@ export default function DashboardScreen() {
         <MetricBar label="Carbs" consumed={totals.carbs} goal={goals?.carbs} unit="g" />
         <MetricBar label="Fat" consumed={totals.fat} goal={goals?.fat} unit="g" />
       </Card>
+
+      {/* Weekly trend (plan 0018) — opens the 7-day trend over the tabs. */}
+      <Button variant="secondary" onPress={() => router.push('/trends')}>
+        Weekly trend →
+      </Button>
 
       {noMeals && (
         <Text type="small" themeColor="textSecondary" style={styles.empty}>

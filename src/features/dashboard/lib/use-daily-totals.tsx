@@ -31,6 +31,8 @@ import { useUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 
+import { makeDayFormatter } from './day-formatter';
+
 /** Only the columns we sum — typed allowlist (over-fetch = compile error). */
 type MealRow = Pick<
   Database['public']['Tables']['meal_logs']['Row'],
@@ -58,21 +60,6 @@ export type DailyTotalsStatus = {
   error: boolean;
   refetch: () => void;
 };
-
-/** `YYYY-MM-DD`-in-`tz` formatter; falls back to UTC if the zone string is invalid. */
-function makeDayFormatter(tz: string): Intl.DateTimeFormat {
-  const opts: Intl.DateTimeFormatOptions = {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  };
-  try {
-    return new Intl.DateTimeFormat('en-CA', { ...opts, timeZone: tz });
-  } catch {
-    // Invalid IANA zone throws a RangeError at construction — never crash Home.
-    return new Intl.DateTimeFormat('en-CA', { ...opts, timeZone: 'UTC' });
-  }
-}
 
 export function useDailyTotals(tz: string): DailyTotalsStatus {
   const { user } = useUser();
