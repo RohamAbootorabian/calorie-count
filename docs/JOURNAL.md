@@ -1344,3 +1344,17 @@ refetch; the correct zone now puts that boundary at 00:00 (higher-traffic), rais
 **Verified.** `tsc` exit 0; `expo lint` clean; full `expo export --platform web` exit 0 with the
 resolver in the bundle. No tz logged; resolver is pure. User device-verify pending (daily view rolls
 at local midnight).
+
+---
+
+## 2026-08-27 — Plan 0021 polish: ring consumed/target subtext no longer truncates
+
+**What.** The four plan-progress rings' consumed/target subtext (e.g. Calories "1715/17148 kcal")
+was truncating ("1715/171…") because it's clamped to the 76px ring width. Gave it a smaller base
+font (12) plus `adjustsFontSizeToFit` + `minimumFontScale={0.6}` so a long value auto-shrinks to
+fit one line while the short macro values stay at base size — keeps the 4-across layout.
+
+**Why.** User-reported: the Calories number didn't fully load. A pure display polish on the 0021
+rings — no logic/data change.
+
+**Verified.** `tsc` exit 0; `expo lint` clean; full `expo export --platform web` exit 0.

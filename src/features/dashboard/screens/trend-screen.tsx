@@ -259,7 +259,14 @@ function MetricRing({
         {label}
       </Text>
       {metric.percent != null ? (
-        <Text type="small" themeColor="textSecondary" numberOfLines={1}>
+        <Text
+          type="small"
+          themeColor="textSecondary"
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+          style={styles.ringSub}
+        >
           {round(metric.consumed)}/{round(metric.target)} {unit}
         </Text>
       ) : null}
@@ -394,6 +401,9 @@ const styles = StyleSheet.create({
   ring: { alignItems: 'center', gap: Spacing.one, width: RING_SIZE },
   ringLabel: { marginTop: Spacing.one },
   ringCenter: { width: RING_SIZE - RING_THICKNESS * 2 - 6, textAlign: 'center' },
+  // Consumed/target subtext: smaller base + auto-shrink so a long calories value
+  // (e.g. "1715/17148 kcal") fits the ring's width without truncating (0021 polish).
+  ringSub: { fontSize: 12, lineHeight: 16, textAlign: 'center' },
   ringWrap: { width: RING_SIZE, height: RING_SIZE, alignItems: 'center', justifyContent: 'center' },
   ringLayer: {
     position: 'absolute',
