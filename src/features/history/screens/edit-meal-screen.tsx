@@ -115,6 +115,10 @@ function MealEditor({ id, detail }: { id: string; detail: NonNullable<ReturnType
     setForm((prev) => ({ ...prev, dishName: value }));
   }
 
+  function setNote(value: string) {
+    setForm((prev) => ({ ...prev, note: value }));
+  }
+
   function setItemField(itemId: string, field: keyof MealItemForm, value: string) {
     setForm((prev) => ({
       ...prev,
@@ -177,6 +181,7 @@ function MealEditor({ id, detail }: { id: string; detail: NonNullable<ReturnType
           onDishChange={setDishName}
           onItemChange={setItemField}
           onRemoveItem={removeItem}
+          onNoteChange={setNote}
           totals={totals}
           withinCaps={withinCaps}
         />

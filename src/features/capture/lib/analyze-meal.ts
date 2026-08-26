@@ -62,8 +62,18 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | type
   }
 }
 
-export async function analyzeMeal({ path }: { path: string }): Promise<AnalyzeResult> {
-  const invocation = supabase.functions.invoke('analyze-meal', { body: { path } });
+export async function analyzeMeal({
+  path,
+  note,
+}: {
+  path: string;
+  /** Optional user note (plan 0020); omitted from the body when empty. Never logged. */
+  note?: string;
+}): Promise<AnalyzeResult> {
+  const trimmedNote = note?.trim() || undefined;
+  const invocation = supabase.functions.invoke('analyze-meal', {
+    body: { path, note: trimmedNote },
+  });
 
   const raced = await withTimeout(invocation, ANALYZE_TIMEOUT_MS);
   if (raced === TIMEOUT) return { ok: false, kind: 'timeout' };

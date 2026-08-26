@@ -152,6 +152,7 @@ export type Database = {
           eaten_at: string
           id: string
           image_path: string | null
+          note: string | null
           quality_factors: string[] | null
           quality_score: number | null
           total_calories: number
@@ -173,6 +174,7 @@ export type Database = {
           eaten_at?: string
           id?: string
           image_path?: string | null
+          note?: string | null
           quality_factors?: string[] | null
           quality_score?: number | null
           total_calories: number
@@ -194,6 +196,7 @@ export type Database = {
           eaten_at?: string
           id?: string
           image_path?: string | null
+          note?: string | null
           quality_factors?: string[] | null
           quality_score?: number | null
           total_calories?: number

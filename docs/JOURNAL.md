@@ -1218,3 +1218,47 @@ loading gate (goals resolves before the 8-day totals query).
 
 **Verified.** `tsc` exit 0; `expo lint` clean; web bundle HTTP 200. User web-verify pending
 before Done. Native line render rides the deferred iPhone pass.
+
+---
+
+## 2026-08-26 — Plan 0020 executed: meal text note → AI + saved & editable (verify pending)
+
+**What.** An optional free-text note in Capture: after the photo uploads, a multiline
+"Add a note (optional)" field appears before Analyze. Its text is sent WITH the photo to
+`analyze-meal` → OpenAI, which is instructed to treat the note as AUTHORITATIVE when it
+conflicts with the photo (ingredients, portion, preparation). The note is persisted on
+`meal_logs.note` and is shown + editable in the review card and the edit-meal screen. Empty
+note = today's behavior exactly.
+
+**Why.** The photo was the only input, so the user couldn't tell the model what the camera
+can't see ("cooked in lots of oil", "2 cups of rice", "protein shake, not milk"). The note
+lets the user correct the estimate at its source.
+
+**How.** Two rails (the note is USER input, not AI output, so `MealAnalysis` is unchanged):
+(a) to the Edge Function for this one analysis — a labelled user-text part placed BEFORE the
+image + a standing system clause making it authoritative-on-conflict; (b) into the editable
+`MealForm` (`note: string`) → `create_meal_log`/`update_meal_log` allowlists → re-editable.
+Migration `20260826120000_meal_log_note.sql`: nullable `note text` + `char_length <= 500`
+check; both RPCs gained `note` in their explicit column allowlists (no `jsonb_populate_record`,
+server still sets `user_id`/`verified`). The DS `Input` already spreads `TextInputProps`, so
+`<Input multiline>` needed no `shared/ui` change (its `hint` prop carries the char counter).
+
+**Review fixes folded in.** B1 — `edit-meal-screen.tsx` DID need a change: both form callers
+(`MealReview`, `EditMealScreen`) add a `setNote` handler and pass `onNoteChange` to the shared
+`MealEditorForm` (the plan's earlier "no change" was wrong; without it tsc fails / the note is
+display-only there). SF2 — the note is capped by CODE POINT (`[...s].slice(0, NOTE_MAX)`) in the
+edge function AND `validateNote`, never a bare `.slice`, so a surrogate pair is never split
+(a lone surrogate would corrupt the RPC jsonb + the OpenAI body). SF3 — on an analyze failure
+when a note was sent, the terminal copy points at editing/removing the note (a refusing note
+re-trips every Retry). SF4/SF5 — the note is disclosed at BOTH the just-in-time capture notice
+("your photo and any note you add are sent to OpenAI") and privacy §1 (stored) + §2 (sent).
+`NOTE_MAX = 500` is a sync-set across the client const, the edge cap, and the DB check.
+
+**Deployed.** `supabase db push` applied the migration (remote up-to-date confirmed);
+`supabase functions deploy analyze-meal` redeployed the note-aware prompt. No new secret,
+CORS unchanged.
+
+**Verified.** `tsc` exit 0; `expo lint` clean; web bundle HTTP 200 (~3.9 MB, complete). Note
+never logged (grep gate: no `console.*note`); no new `select('*')`. User web-verify pending
+before Done (type a note that changes the estimate; conflict test; edit-and-reopen; empty-note
+regression). The multiline field + keyboard behavior on-device rides the deferred iPhone pass.

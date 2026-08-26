@@ -41,7 +41,10 @@ const SYSTEM_PROMPT =
   "sugar\"), and any assumptions the user should confirm. Use metric units; " +
   "sodium in mg. If the image contains NO food (text, a menu, a non-food " +
   "scene), return an EMPTY items array rather than inventing items. If unsure, " +
-  "LOWER your confidence rather than inventing precision.";
+  "LOWER your confidence rather than inventing precision. " +
+  "If the user provides a note about the meal, treat it as AUTHORITATIVE: when " +
+  "it conflicts with the photo (ingredients, portion, preparation), follow the " +
+  "note; use the photo for details the note doesn't cover.";
 
 const USER_PROMPT = "Analyse this meal photo.";
 
@@ -59,27 +62,38 @@ interface OpenAIArgs {
   mimeType: string;
   /** Aborted by the caller's timeout AbortController (plan B4). */
   signal: AbortSignal;
+  /** Optional user note about the meal (plan 0020) — authoritative on conflict. */
+  note?: string;
 }
 
 export async function analyzeWithOpenAI(
-  { apiKey, base64, mimeType, signal }: OpenAIArgs,
+  { apiKey, base64, mimeType, signal, note }: OpenAIArgs,
 ): Promise<OpenAIResult> {
+  // Labelled user text part, placed BEFORE the image so the note frames the
+  // photo. The system prompt already instructs "treat the note as authoritative
+  // on conflict"; omit the part entirely when there's no note (identical to the
+  // no-note request). NEVER logged (health-adjacent PII, plan 0020).
+  const userContent: Array<Record<string, unknown>> = [
+    { type: "text", text: USER_PROMPT },
+  ];
+  if (note && note.length > 0) {
+    userContent.push({
+      type: "text",
+      text: "User's note about this meal (treat as authoritative): " + note,
+    });
+  }
+  userContent.push({
+    type: "image_url",
+    image_url: { url: `data:${mimeType};base64,${base64}`, detail: "auto" },
+  });
+
   const body = {
     model: MODEL,
     temperature: 0.2,
     max_tokens: MAX_TOKENS,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: USER_PROMPT },
-          {
-            type: "image_url",
-            image_url: { url: `data:${mimeType};base64,${base64}`, detail: "auto" },
-          },
-        ],
-      },
+      { role: "user", content: userContent },
     ],
     response_format: {
       type: "json_schema",

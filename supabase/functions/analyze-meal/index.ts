@@ -19,7 +19,8 @@
  *
  * LOGGING DISCIPLINE: SAFE = error kind, status, coarse timing. FORBIDDEN =
  * path/uid, the Authorization header/JWT, photo bytes/base64, any signed URL,
- * the parsed MealAnalysis (health data), and the raw OpenAI response body.
+ * the parsed MealAnalysis (health data), the user note (health-adjacent free
+ * text, plan 0020), and the raw OpenAI response body.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -34,6 +35,9 @@ const MAX_BYTES = 10 * 1024 * 1024; // matches the bucket's 10 MB cap.
 const DOWNLOAD_TIMEOUT_MS = 15_000; // → `network`
 const AI_TIMEOUT_MS = 30_000; //      → `timeout` (client withTimeout is ~35 s)
 const DAILY_CAP = 50; // analyses per user per day (B6). Tune from real usage.
+// SYNC-SET with the client `NOTE_MAX` (meal-form.ts) + the DB `meal_logs_note_len`
+// check (plan 0020). Deno can't import the client const, so it's mirrored here.
+const NOTE_MAX = 500;
 
 /** Exhaustive typed outcomes (mirrors the client helper's union). */
 type ErrorKind =
@@ -118,13 +122,19 @@ Deno.serve(async (req) => {
     if (!uid || !UUID_RE.test(uid)) return fail(origin, "unauthorized");
 
     // --- Parse + cost-guard pre-check (NOT authorization) -----------------
-    let body: { path?: unknown };
+    let body: { path?: unknown; note?: unknown };
     try {
       body = await req.json();
     } catch {
       return fail(origin, "not_found"); // unreadable body → no valid path.
     }
     const path = typeof body.path === "string" ? body.path : "";
+    // Note (plan 0020): trim + cap by CODE POINT (never a bare `.slice`, which
+    // can split a surrogate pair → a lone surrogate corrupts the RPC jsonb + the
+    // OpenAI body). Server-side cap = defense-in-depth (never trust client length).
+    const note = typeof body.note === "string"
+      ? [...body.note.trim()].slice(0, NOTE_MAX).join("")
+      : "";
     // Shape: `<uid>/<name>.<jpg|jpeg|png>`, first segment === caller uid.
     const match = path.match(/^([^/]+)\/[^/]+\.(jpg|jpeg|png)$/i);
     if (!match || match[1] !== uid) return fail(origin, "not_found");
@@ -167,6 +177,7 @@ Deno.serve(async (req) => {
         base64,
         mimeType,
         signal: controller.signal,
+        note,
       });
     } finally {
       clearTimeout(aiTimer);

@@ -46,12 +46,13 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
       'Your profile: the display name, units (metric or imperial), and time zone you set.',
       'The details you enter to set your goals — age, sex, height, weight, activity level, and weight goal — and the daily calorie and macro targets we compute from them.',
       'The meal photos you capture, and the food items and nutrition estimates you review and save.',
+      'Any optional note you write to describe a meal — stored on that meal so you can review and edit it later.',
     ],
   },
   {
     heading: 'How your meal photos are analyzed',
     body: [
-      'When you analyze a meal, your photo and a short instruction are sent — through our own server, never directly from your phone — to OpenAI (the GPT-4o-mini vision model), which returns an estimate of the foods and their nutrition.',
+      'When you analyze a meal, your photo, a short instruction, and any note you added are sent — through our own server, never directly from your phone — to OpenAI (the GPT-4o-mini vision model), which returns an estimate of the foods and their nutrition.',
       `As of ${EFFECTIVE_DATE}, OpenAI states that it does not use data submitted through its API to train its models. We can't control a third party's terms, so please review OpenAI's own privacy policy for the current details.`,
     ],
   },

@@ -1,6 +1,6 @@
 # Plan: Text note for a meal — sent to the AI + saved & editable
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user web-verify pending)
 - **Created**: 2026-08-26
 - **Plan #**: 0020
 
@@ -328,5 +328,34 @@ note disclosed at BOTH the capture notice and privacy §1+§2. With the edits ab
 for execution (migration → deploy edge → client).
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+_Executed 2026-08-26. Landed exactly to the approved plan — no deviations._
+
+**Order (rollout).**
+1. **Migration** `20260826120000_meal_log_note.sql` — nullable `note text` + `char_length
+   <= 500` check; `note` added to `create_meal_log` + `update_meal_log` allowlists (full-body
+   `create or replace`, only the note column/value new). `supabase db push` applied it; a
+   follow-up `--dry-run` confirmed "Remote database is up to date."
+2. **Edge Function** — `openai.ts`: `OpenAIArgs.note?`, a labelled user-text part before the
+   image (only when non-empty), + the authoritative-on-conflict system clause. `index.ts`:
+   body type widened to `{ path?; note? }`, code-point cap (`[...trim].slice(0,NOTE_MAX)`,
+   edge-local `NOTE_MAX=500`), passed to OpenAI, LOGGING DISCIPLINE header extended ("the user
+   note"). `supabase functions deploy analyze-meal` succeeded.
+3. **Client** — `analyze-meal.ts` (`analyzeMeal({path,note})`, omit-when-empty); `meal-form.ts`
+   (`note` on `MealForm`/`SaveLogPayload`/`StoredMealLog`, both seeders, `toSavePayload`,
+   `validateNote` code-point + wired into `isFormValid`, `NOTE_MAX` export); `meal-editor-form.tsx`
+   (controlled `onNoteChange` + `<Input multiline>` with `hint` counter); `meal-review.tsx`
+   (`initialNote` + `setNote` + `onNoteChange`); `edit-meal-screen.tsx` (**B1**: `setNote` +
+   `onNoteChange`); `capture-screen.tsx` (note state cleared via `resetAnalyze`, `<Input multiline>`
+   in the post-upload block, `initialNote={note}` → `MealReview`, amended notice **SF4**, terminal
+   failure copy points at the note **SF3**); `use-meal-detail.tsx` (`note` in the SELECT string +
+   `StoredMealLog`); `database.ts` (hand-added `note: string | null` to `meal_logs`
+   Row/Insert/Update — targeted, no regen drift); `privacy-content.ts` (§1 stored + §2 sent, **SF5**).
+
+**Deviations.** None. (The `analyzedWithNote` state considered for SF3 proved redundant — the
+failure copy is computed from the local `sentNote` at analyze time and baked into the error
+string — so it was dropped; behavior is unchanged.)
+
+**Verification.** `npx tsc --noEmit` exit 0. `npx expo lint` exit 0 (clean). Web bundle HTTP
+200, ~3.9 MB, complete (`sourceMappingURL` tail, not an error envelope). Grep gate: no
+`console.*note` in the client helper / capture screen / edge; no new `select('*')`. Migration +
+edge deployed to prod. **User web-verify still pending** before this is truly Done.

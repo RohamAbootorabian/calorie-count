@@ -20,10 +20,11 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
-import { Button, Card, Screen, Text } from '@/shared/ui';
+import { Button, Card, Input, Screen, Text } from '@/shared/ui';
 import type { MealAnalysis } from '@/types/nutrition';
 
 import { analyzeMeal, type AnalyzeErrorKind } from '../lib/analyze-meal';
+import { NOTE_MAX } from '../lib/meal-form';
 import { deleteMealPhoto } from '../lib/delete-meal-photo';
 import {
   pickFromLibrary,
@@ -95,6 +96,11 @@ export function CaptureScreen() {
   const [canRetry, setCanRetry] = useState(false);
   const [uploadedPath, setUploadedPath] = useState<string | null>(null);
 
+  // Optional meal note (plan 0020) — typed after upload, before Analyze; sent WITH
+  // the photo and seeded into the review form. Cleared via `resetAnalyze` (every
+  // reset path funnels through it, so a re-pick never carries a stale note).
+  const [note, setNote] = useState('');
+
   // Analyze step — its OWN state so a stale upload error never renders here.
   const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<MealAnalysis | null>(null);
@@ -135,6 +141,7 @@ export function CaptureScreen() {
     setAnalyzeError(undefined);
     setAnalyzeCanRetry(false);
     setAnalyzeAttempts(0);
+    setNote('');
   }
 
   function applyPickOutcome(outcome: PickOutcome) {
@@ -188,11 +195,13 @@ export function CaptureScreen() {
   async function handleAnalyze() {
     if (!uploadedPath || analyzing) return; // no double Gemini charge.
     const path = uploadedPath;
+    const trimmedNote = note.trim();
+    const sentNote = trimmedNote.length > 0;
     setAnalyzing(true);
     setAnalyzeError(undefined);
     setAnalyzeCanRetry(false);
 
-    const result = await analyzeMeal({ path });
+    const result = await analyzeMeal({ path, note: trimmedNote });
 
     if (!mounted.current) return;
     if (currentPath.current !== path) return; // re-pick race: ignore stale result.
@@ -207,10 +216,14 @@ export function CaptureScreen() {
     setAnalyzeAttempts(nextAttempts);
     // Even a transient kind stops being retryable once the bounded budget is spent.
     setAnalyzeCanRetry(retryable && nextAttempts < MAX_ANALYZE_ATTEMPTS);
+    // SF3: a note can deterministically re-trip a content_filter/refusal on every
+    // Retry, so when a note was sent the terminal guidance points at the note (it's
+    // on-screen + re-enabled), not only "re-take the photo".
+    const terminalHint = sentNote
+      ? ' If it keeps failing, try editing or removing your note, or re-take the photo.'
+      : ' If it keeps failing, re-take the photo.';
     setAnalyzeError(
-      retryable && nextAttempts >= MAX_ANALYZE_ATTEMPTS
-        ? `${message} If it keeps failing, re-take the photo.`
-        : message,
+      retryable && nextAttempts >= MAX_ANALYZE_ATTEMPTS ? `${message}${terminalHint}` : message,
     );
     setAnalyzing(false);
   }
@@ -267,7 +280,7 @@ export function CaptureScreen() {
               while a photo is selected and not yet saved; hide once MealReview is up. */}
           {!analysis ? (
             <Text type="small" themeColor="textSecondary">
-              Your photo is uploaded and sent to OpenAI to estimate nutrition.{' '}
+              Your photo and any note you add are sent to OpenAI to estimate nutrition.{' '}
               <Text type="linkPrimary" onPress={() => router.push('/privacy')}>
                 Privacy
               </Text>
@@ -285,6 +298,7 @@ export function CaptureScreen() {
                   key={uploadedPath ?? 'none'}
                   analysis={analysis}
                   imagePath={uploadedPath}
+                  initialNote={note}
                   onLogAnother={chooseAnother}
                   onSaving={(path) => {
                     savedPath.current = path;
@@ -292,6 +306,20 @@ export function CaptureScreen() {
                 />
               ) : (
                 <>
+                  {/* Optional note (plan 0020): influences the estimate and is
+                      authoritative on conflict; seeds the editable review form. */}
+                  <Input
+                    label="Add a note (optional)"
+                    value={note}
+                    onChangeText={setNote}
+                    placeholder="e.g. fried in butter, 2 cups of rice"
+                    hint={`${[...note].length}/${NOTE_MAX}`}
+                    autoCapitalize="sentences"
+                    multiline
+                    maxLength={NOTE_MAX}
+                    editable={!analyzing}
+                    style={styles.noteInput}
+                  />
                   {analyzeError ? (
                     <Text type="small" themeColor="danger">
                       {analyzeError}
@@ -353,5 +381,9 @@ const styles = StyleSheet.create({
     width: '100%',
     aspectRatio: 1,
     borderRadius: Radius.md,
+  },
+  noteInput: {
+    minHeight: 88,
+    textAlignVertical: 'top',
   },
 });

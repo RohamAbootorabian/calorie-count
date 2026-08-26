@@ -16,13 +16,22 @@ import { Spacing } from '@/constants/theme';
 import { Button, Card, Input, Text } from '@/shared/ui';
 import type { Nutrients } from '@/types/nutrition';
 
-import { validateDishName, validateItem, type MealForm, type MealItemForm } from '../lib/meal-form';
+import {
+  NOTE_MAX,
+  validateDishName,
+  validateItem,
+  validateNote,
+  type MealForm,
+  type MealItemForm,
+} from '../lib/meal-form';
 
 export type MealEditorFormProps = {
   form: MealForm;
   onDishChange: (value: string) => void;
   onItemChange: (id: string, field: keyof MealItemForm, value: string) => void;
   onRemoveItem: (id: string) => void;
+  /** Controlled note handler (plan 0020) — mirrors `onDishChange`. */
+  onNoteChange: (value: string) => void;
   totals: Nutrients;
   withinCaps: boolean;
 };
@@ -32,10 +41,12 @@ export function MealEditorForm({
   onDishChange,
   onItemChange,
   onRemoveItem,
+  onNoteChange,
   totals,
   withinCaps,
 }: MealEditorFormProps) {
   const dishError = validateDishName(form.dishName);
+  const noteError = validateNote(form.note);
 
   return (
     <View style={styles.body}>
@@ -50,6 +61,19 @@ export function MealEditorForm({
         onChangeText={onDishChange}
         error={dishError}
         autoCapitalize="sentences"
+      />
+
+      <Input
+        label="Note (optional)"
+        value={form.note}
+        onChangeText={onNoteChange}
+        error={noteError}
+        hint={`${[...form.note].length}/${NOTE_MAX}`}
+        placeholder="e.g. fried in butter, 2 cups of rice"
+        autoCapitalize="sentences"
+        multiline
+        maxLength={NOTE_MAX}
+        style={styles.noteInput}
       />
 
       {form.items.map((item, index) => (
@@ -186,6 +210,10 @@ function TotalRow({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   body: {
     gap: Spacing.three,
+  },
+  noteInput: {
+    minHeight: 88,
+    textAlignVertical: 'top',
   },
   itemCard: {
     gap: Spacing.two,

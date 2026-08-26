@@ -40,6 +40,8 @@ import { MealEditorForm } from './meal-editor-form';
 type MealReviewProps = {
   analysis: MealAnalysis;
   imagePath: string | null;
+  /** The note the user typed in Capture (plan 0020) — seeds the editable form. */
+  initialNote?: string;
   onLogAnother: () => void;
   /**
    * Fired the instant a save RPC is dispatched (plan 0011 B1) so the parent can
@@ -65,8 +67,14 @@ function saveErrorCopy(kind: SaveErrorKind): { message: string; canRetry: boolea
   }
 }
 
-export function MealReview({ analysis, imagePath, onLogAnother, onSaving }: MealReviewProps) {
-  const [form, setForm] = useState<MealForm>(() => seedFormFromAnalysis(analysis));
+export function MealReview({
+  analysis,
+  imagePath,
+  initialNote,
+  onLogAnother,
+  onSaving,
+}: MealReviewProps) {
+  const [form, setForm] = useState<MealForm>(() => seedFormFromAnalysis(analysis, initialNote));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
   const [saveCanRetry, setSaveCanRetry] = useState(false);
@@ -86,6 +94,10 @@ export function MealReview({ analysis, imagePath, onLogAnother, onSaving }: Meal
 
   function setDishName(value: string) {
     setForm((prev) => ({ ...prev, dishName: value }));
+  }
+
+  function setNote(value: string) {
+    setForm((prev) => ({ ...prev, note: value }));
   }
 
   function setItemField(id: string, field: keyof MealItemForm, value: string) {
@@ -150,6 +162,7 @@ export function MealReview({ analysis, imagePath, onLogAnother, onSaving }: Meal
         onDishChange={setDishName}
         onItemChange={setItemField}
         onRemoveItem={removeItem}
+        onNoteChange={setNote}
         totals={totals}
         withinCaps={withinCaps}
       />

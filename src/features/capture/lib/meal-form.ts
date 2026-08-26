@@ -27,6 +27,9 @@ export const MAX_CALORIES = 100000;
 export const MAX_MACRO = 10000; // protein/carbs/fat/sugar/fiber
 export const MAX_SODIUM = 1000000; // mg
 export const NAME_MAX = 200;
+// Meal note cap (plan 0020). SYNC-SET with the edge function's code-point slice
+// AND the DB `meal_logs_note_len` check (all three are `500`; move together).
+export const NOTE_MAX = 500;
 
 /** Per-total DB caps — block Save (reject, never clamp) if any total exceeds. */
 export const MAX_TOTALS: Nutrients = {
@@ -68,6 +71,8 @@ export type MealForm = {
   confidence: Confidence;
   quality?: { score: number; factors: string[] };
   assumptions?: string[];
+  /** Optional user note (plan 0020) — user input, not AI output; editable + saved. */
+  note: string;
 };
 
 /** Round to a tidy input string — integers stay integers, else 1 decimal. */
@@ -76,8 +81,12 @@ function numToInput(n: number): string {
   return String(Math.round(n * 10) / 10);
 }
 
-/** Seed an editable form from the AI analysis (dish defaults to "Meal"). */
-export function seedFormFromAnalysis(analysis: MealAnalysis): MealForm {
+/**
+ * Seed an editable form from the AI analysis (dish defaults to "Meal"). The note
+ * is NOT an AI field — it's the user's Capture-time note, passed in from the
+ * capture screen (plan 0020); defaults to empty for callers that don't have one.
+ */
+export function seedFormFromAnalysis(analysis: MealAnalysis, initialNote = ''): MealForm {
   return {
     dishName: analysis.dishName?.trim() ? analysis.dishName : 'Meal',
     confidence: analysis.confidence,
@@ -85,6 +94,7 @@ export function seedFormFromAnalysis(analysis: MealAnalysis): MealForm {
       ? { score: analysis.quality.score, factors: analysis.quality.factors }
       : undefined,
     assumptions: analysis.assumptions,
+    note: initialNote,
     items: analysis.items.map((item, i) => ({
       id: String(i),
       name: item.name,
@@ -115,6 +125,7 @@ export type StoredMealLog = {
   quality_score: number | null;
   quality_factors: string[] | null;
   assumptions: string[] | null;
+  note: string | null;
 };
 
 export type StoredMealItem = {
@@ -149,6 +160,7 @@ export function seedFormFromMealLog(log: StoredMealLog, items: StoredMealItem[])
         ? { score: log.quality_score, factors: log.quality_factors ?? [] }
         : undefined,
     assumptions: log.assumptions ?? undefined,
+    note: log.note ?? '',
     items: items.map((item, i) => ({
       id: String(i),
       name: item.name,
@@ -197,6 +209,18 @@ export function validateDishName(raw: string): string | undefined {
   return undefined;
 }
 
+/**
+ * The note is ALWAYS optional (empty is valid). Length is checked on the TRIMMED
+ * value by CODE POINT (`[...s].length`, plan 0020 SF2) so it agrees with
+ * `toSavePayload`'s trim + the DB `char_length` check + the edge code-point cap
+ * — a `.length`/`maxLength` check would count UTF-16 units and could disagree.
+ * Near-dead behind RN `maxLength`, kept as defense-in-depth (no value echo).
+ */
+export function validateNote(raw: string): string | undefined {
+  if ([...raw.trim()].length > NOTE_MAX) return `Keep the note under ${NOTE_MAX} characters.`;
+  return undefined;
+}
+
 /** Per-item field errors; an empty object means the item is valid. */
 export type ItemErrors = Partial<Record<'name' | 'calories' | 'protein' | 'carbs' | 'fat', string>>;
 
@@ -218,6 +242,7 @@ export function validateItem(item: MealItemForm): ItemErrors {
 /** Whole-form validity: dish name + every item field + at least one item. */
 export function isFormValid(form: MealForm): boolean {
   if (validateDishName(form.dishName)) return false;
+  if (validateNote(form.note)) return false;
   if (form.items.length === 0) return false;
   return form.items.every((item) => Object.keys(validateItem(item)).length === 0);
 }
@@ -265,6 +290,7 @@ export type SaveLogPayload = {
   quality_score: number | null;
   quality_factors: string[] | null;
   assumptions: string[] | null;
+  note: string | null;
   total_calories: number;
   total_protein: number;
   total_carbs: number;
@@ -323,6 +349,7 @@ export function toSavePayload(form: MealForm, imagePath: string | null): SavePay
       quality_score: form.quality ? Math.round(form.quality.score) : null,
       quality_factors: form.quality ? form.quality.factors : null,
       assumptions: form.assumptions ?? null,
+      note: form.note.trim() || null,
       total_calories: totals.calories,
       total_protein: totals.protein,
       total_carbs: totals.carbs,
