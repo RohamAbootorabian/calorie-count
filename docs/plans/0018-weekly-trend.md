@@ -1,6 +1,6 @@
 # Plan: Weekly calorie trend view
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → **In Progress** (user web-verify pending) → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-08-04
 - **Plan #**: 0018
 
@@ -332,6 +332,5 @@ implemented per SF4 as `@/features/dashboard/screens/trend-screen` (co-located).
 change.
 
 **Verified:** `tsc --noEmit` exit 0; `expo lint` clean; web bundle HTTP 200 · 3.9 MB ·
-complete (sourcemap tail) with the new screen/hook. **PENDING: user web-verify** (7 bars +
-weekly averages + empty/regression) before flipping to Done. Native `Intl` tz bucketing
-rides the deferred iPhone pass.
+complete (sourcemap tail); **user web-verified** (7 bars + weekly averages render, dashboard
+regression clean). DONE. Native `Intl` tz bucketing rides the deferred iPhone pass.
