@@ -1,6 +1,6 @@
 # Plan: Calorie goal line on the weekly trend chart
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → **In Progress** (user web-verify pending) → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-08-26
 - **Plan #**: 0019
 
@@ -263,7 +263,9 @@ totals refetch shows the full-screen spinner (the chart isn't mounted), and the 
 goals query resolves before the 8-day totals query — so the line is present when the chart
 re-appears. Documented in-code.
 
-**Verified:** `tsc --noEmit` exit 0; `expo lint` clean; web bundle HTTP 200 · 3.9 MB ·
-complete. **PENDING: user web-verify** (goal line at the target level, caption, rescale when
-goal>days, no-goal unchanged, edit-goal reflects) before flipping to Done. Line render on
-native rides the deferred iPhone pass.
+**Verified:** `tsc --noEmit` exit 0; `expo lint` clean; web bundle HTTP 200; **user
+web-verified** (goal line at the target level + caption render). Two follow-up spacing
+polishes shipped on user feedback: (1) separated bars from labels + dropped weekday labels
+lower (col gap, weekday `marginTop`, `CHART_HEIGHT` 180→200); (2) added a gap between the
+chart card and the summary card (`Screen contentContainerStyle` gap). DONE. Native line
+render rides the deferred iPhone pass.
