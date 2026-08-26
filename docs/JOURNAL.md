@@ -1262,3 +1262,45 @@ CORS unchanged.
 never logged (grep gate: no `console.*note`); no new `select('*')`. User web-verify pending
 before Done (type a note that changes the estimate; conflict test; edit-and-reopen; empty-note
 regression). The multiline field + keyboard behavior on-device rides the deferred iPhone pass.
+
+---
+
+## 2026-08-27 — Plan 0021 executed: Saturday-first weekly bars + four plan-progress rings (verify pending)
+
+**What.** Two changes to the Weekly trend (`/trends`): (1) the 7 bars now read in a fixed
+**Saturday → Friday** layout (same rolling last-7-days data, no empty days), with today
+highlighted wherever it falls; (2) a new card of **four pure-View ring charts** — Calories,
+Protein, Carbs, Fat — showing how much of the recommended plan the user has hit **this week so
+far**: `consumed(Sat→today) ÷ (daily goal × days elapsed since Saturday)`. The real % is in the
+ring's center (can exceed 100%), the ring fills to a visual 100% cap, and an over-target ring is
+colored `danger`.
+
+**Why.** The bars had no week anchor (rolling, today-last) and no sense of "am I on plan?". The
+user wanted a Saturday-anchored week and a per-macro progress-against-plan readout.
+
+**How.** Pure client — no migration, no new dependency (no SVG → no native rebuild), no extra
+fetch. The rings are derived from the SAME weekly rows the bars use: a new pure helper
+`weekPlanProgress(days, goals)` sums a contiguous Sat→today tail and divides by `goal × elapsed`
+(elapsed from the Saturday-first weekday rank of today). The Sat-first bar order is a display-only
+sort by `(getUTCDay(key)+1)%7`; a new `isToday` flag on `DayTotals` (set on the seed day) carries
+the highlight so the reorder can't desync it. The donut is the classic two-layer border-arc View
+technique (track ring + a rotated top/right-bordered half-ring, with a track-colored offset layer
+for ≤50% or a second colored half-ring for >50%).
+
+**Review fixes folded in.** SF1 — `elapsed` derived structurally + guarded (`elapsed > 0`,
+defensive empty result) so a `goal × 0` denominator can't make `percent = Infinity` (the
+`goal > 0` guard alone wouldn't catch it). SF2 — the rings are computed AFTER the loading/error/
+empty gates (where `days` is length-7). SF3 — the no-goal hint shows ONLY on `!goalsLoading &&
+goals == null`; while goals load, a spinner (never a hint flashed at a user who has goals). SF4 —
+one shared `guardedRatio` helper replaces the duplicated `progressFor` guard (dashboard screen +
+rings both consume it). SF5 — no-log discipline + typed `Pick<>` allowlists on the new files.
+SF6 — rings kept per the user's explicit request; a 4-bar fallback (reusing `guardedRatio`) is
+noted. OQs resolved: ring is dashboard-local; over-target reuses the `danger` token (no new
+theme token).
+
+**Verified.** `tsc` exit 0; `expo lint` clean; full `expo export --platform web` exit 0 with the
+new trend code present in the compiled bundle (the trend route is code-split, so a full export —
+not the entry.bundle curl — is the authoritative web check here). No metric/goal/percent logged.
+User web-verify pending before Done (Sat→Fri order + today highlight on a non-Friday; ring
+percentages; over-target color; no-goal hint). Pure-View ring render on-device rides the deferred
+iPhone pass.

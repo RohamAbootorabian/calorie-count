@@ -13,7 +13,7 @@
  * isn't diluted; 0 logged days shows "—", never NaN.
  */
 import { useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, View, type DimensionValue } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
@@ -25,11 +25,26 @@ import { Button, Card, Screen, Text } from '@/shared/ui';
 
 import { useDailyGoals } from '../lib/use-daily-goals';
 import { useWeeklyTotals, type DayTotals } from '../lib/use-weekly-totals';
+import { weekPlanProgress, type MetricProgress } from '../lib/week-plan-progress';
 
 const CHART_HEIGHT = 200;
+const RING_SIZE = 76;
+const RING_THICKNESS = 8;
 
 function round(n: number): number {
   return Math.round(n);
+}
+
+/** Saturday-first display rank for a `YYYY-MM-DD` UTC key: Sat→0 … Fri→6 (plan 0021). */
+function saturdayFirstRank(key: string): number {
+  return (new Date(key).getUTCDay() + 1) % 7;
+}
+
+/** Center label: rounded percent, capped so an absurd value can't overflow the donut. */
+function formatPercent(percent: number | null): string {
+  if (percent === null) return '—';
+  const pct = Math.round(percent * 100);
+  return pct > 999 ? '999%+' : `${pct}%`;
 }
 
 export default function TrendScreen() {
@@ -97,6 +112,14 @@ export default function TrendScreen() {
   const avg = (select: (d: DayTotals) => number) =>
     Math.round(loggedDays.reduce((sum, d) => sum + select(d), 0) / loggedDays.length);
 
+  // Bars: same last-7-days data, re-ordered into a fixed Saturday→Friday layout (plan 0021).
+  // `days` stays chronological (the plan rings below depend on it); this is display-only.
+  const displayDays = [...days].sort((a, b) => saturdayFirstRank(a.key) - saturdayFirstRank(b.key));
+
+  // "This week's plan, so far" rings — computed AFTER the gates, where `days` is length-7
+  // (plan 0021 SF2). Goals may be null/loading — non-fatal (handled in the rings card).
+  const plan = weekPlanProgress(days, goals);
+
   return (
     <Screen scroll contentContainerStyle={styles.screenContent}>
       <Card style={styles.chartCard}>
@@ -105,16 +128,39 @@ export default function TrendScreen() {
           {goalCal != null ? ` · goal ${round(goalCal)} kcal` : ''}
         </Text>
         <View style={styles.chart}>
-          {days.map((day, i) => (
+          {displayDays.map((day) => (
             <DayBar
               key={day.key}
               day={day}
               domainMax={domainMax}
               goalCal={goalCal}
-              isToday={i === days.length - 1}
+              isToday={day.isToday}
             />
           ))}
         </View>
+      </Card>
+
+      {/* This week's plan progress — four rings (plan 0021). */}
+      <Card style={styles.summaryCard}>
+        <Text type="small" themeColor="textSecondary">
+          This week&apos;s plan · {plan.elapsed} of 7 day{plan.elapsed === 1 ? '' : 's'}
+        </Text>
+        {goalsLoading ? (
+          <View style={styles.ringsLoading}>
+            <ActivityIndicator />
+          </View>
+        ) : goals == null ? (
+          <Text type="small" themeColor="textSecondary">
+            Set your goals in Settings to see weekly progress.
+          </Text>
+        ) : (
+          <View style={styles.rings}>
+            <MetricRing label="Calories" unit="kcal" metric={plan.calories} />
+            <MetricRing label="Protein" unit="g" metric={plan.protein} />
+            <MetricRing label="Carbs" unit="g" metric={plan.carbs} />
+            <MetricRing label="Fat" unit="g" metric={plan.fat} />
+          </View>
+        )}
       </Card>
 
       <Card style={styles.summaryCard}>
@@ -188,6 +234,97 @@ function DayBar({
   );
 }
 
+/** One plan-progress ring: donut + center percent + label + consumed/target. */
+function MetricRing({
+  label,
+  unit,
+  metric,
+}: {
+  label: string;
+  unit: string;
+  metric: MetricProgress;
+}) {
+  const theme = useTheme();
+  // Over-target (real % > 100) → danger color; the ring still fills to a visual cap.
+  const over = metric.percent != null && metric.percent > 1;
+  const color = over ? theme.danger : theme.primary;
+  return (
+    <View style={styles.ring}>
+      <ProgressRing fraction={metric.percent ?? 0} color={color} trackColor={theme.backgroundElement}>
+        <Text type="smallBold" numberOfLines={1} adjustsFontSizeToFit style={styles.ringCenter}>
+          {formatPercent(metric.percent)}
+        </Text>
+      </ProgressRing>
+      <Text type="smallBold" style={styles.ringLabel}>
+        {label}
+      </Text>
+      {metric.percent != null ? (
+        <Text type="small" themeColor="textSecondary" numberOfLines={1}>
+          {round(metric.consumed)}/{round(metric.target)} {unit}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Pure-`View` donut progress ring (plan 0021 — no SVG, no new dependency). The
+ * classic two-layer border-arc technique: a full track ring, a top+right-bordered
+ * half-ring rotated to sweep the first 0–50%, then either a track-colored "offset"
+ * layer that re-hides the left half (≤50%) or a second colored half-ring that sweeps
+ * 50–100% (>50%). Arc starts at 12 o'clock, clockwise. `fraction` is clamped to
+ * [0,1] so an over-target value fills fully (the real % lives in the center label).
+ */
+function ProgressRing({
+  fraction,
+  color,
+  trackColor,
+  children,
+}: {
+  fraction: number;
+  color: string;
+  trackColor: string;
+  children: ReactNode;
+}) {
+  const pct = Math.min(Math.max(fraction, 0), 1) * 100;
+  const firstRotate = pct > 50 ? '45deg' : `${pct * 3.6 - 135}deg`;
+  return (
+    <View style={styles.ringWrap}>
+      <View style={[styles.ringLayer, { borderColor: trackColor }]} />
+      <View
+        style={[
+          styles.ringArc,
+          { borderTopColor: color, borderRightColor: color, transform: [{ rotateZ: firstRotate }] },
+        ]}
+      />
+      {pct <= 50 ? (
+        <View
+          style={[
+            styles.ringArc,
+            {
+              borderTopColor: trackColor,
+              borderRightColor: trackColor,
+              transform: [{ rotateZ: '-135deg' }],
+            },
+          ]}
+        />
+      ) : (
+        <View
+          style={[
+            styles.ringArc,
+            {
+              borderTopColor: color,
+              borderRightColor: color,
+              transform: [{ rotateZ: `${(pct - 50) * 3.6 - 135}deg` }],
+            },
+          ]}
+        />
+      )}
+      {children}
+    </View>
+  );
+}
+
 function MacroAvg({ label, grams }: { label: string; grams: number }) {
   return (
     <View style={styles.macroRow}>
@@ -245,4 +382,33 @@ const styles = StyleSheet.create({
   summaryCard: { gap: Spacing.two },
   macros: { gap: Spacing.one, marginTop: Spacing.one },
   macroRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  // Plan-progress rings (0021).
+  rings: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    gap: Spacing.three,
+    marginTop: Spacing.two,
+  },
+  ringsLoading: { alignItems: 'center', paddingVertical: Spacing.three },
+  ring: { alignItems: 'center', gap: Spacing.one, width: RING_SIZE },
+  ringLabel: { marginTop: Spacing.one },
+  ringCenter: { width: RING_SIZE - RING_THICKNESS * 2 - 6, textAlign: 'center' },
+  ringWrap: { width: RING_SIZE, height: RING_SIZE, alignItems: 'center', justifyContent: 'center' },
+  ringLayer: {
+    position: 'absolute',
+    width: RING_SIZE,
+    height: RING_SIZE,
+    borderRadius: RING_SIZE / 2,
+    borderWidth: RING_THICKNESS,
+  },
+  ringArc: {
+    position: 'absolute',
+    width: RING_SIZE,
+    height: RING_SIZE,
+    borderRadius: RING_SIZE / 2,
+    borderWidth: RING_THICKNESS,
+    borderLeftColor: 'transparent',
+    borderBottomColor: 'transparent',
+  },
 });

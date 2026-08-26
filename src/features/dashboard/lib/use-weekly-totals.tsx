@@ -51,6 +51,9 @@ export type DayTotals = {
   key: string;
   /** Short weekday, e.g. "Mon" (derived from the UTC seed — locale-free). */
   weekdayLabel: string;
+  /** True ONLY for the seed day (today). Set at build time so a display reorder
+   *  (plan 0021 Saturday-first) can't desync the highlight from the data. */
+  isToday: boolean;
   calories: number;
   protein: number;
   carbs: number;
@@ -136,6 +139,7 @@ export function useWeeklyTotals(tz: string): WeeklyTotalsStatus {
       const day: DayTotals = {
         key: di.toISOString().slice(0, 10),
         weekdayLabel: WEEKDAY_LABELS[di.getUTCDay()],
+        isToday: i === 0, // the seed day (loop walks i = DAYS-1 … 0; today is i===0).
         calories: 0,
         protein: 0,
         carbs: 0,

@@ -29,20 +29,26 @@ import { useTheme } from '@/hooks/use-theme';
 import { useUser } from '@/lib/auth';
 import { Button, Card, Text } from '@/shared/ui';
 
+import { guardedRatio } from '../lib/guarded-ratio';
 import { useDailyGoals } from '../lib/use-daily-goals';
 import { useDailyTotals } from '../lib/use-daily-totals';
 
 type Progress = { fraction: number; remaining: number; over: number; hasGoal: boolean };
 
-/** The single guarded progress helper — `goal > 0` is the only "has target" case. */
+/**
+ * The single guarded progress helper — `goal > 0` is the only "has target" case.
+ * Shares the divide-by-zero guard with the weekly rings via `guardedRatio` (plan
+ * 0021 SF4); here we clamp the fraction for the bar + derive remaining/over.
+ */
 function progressFor(consumed: number, goal: number | null | undefined): Progress {
-  if (typeof goal !== 'number' || !(goal > 0)) {
+  const ratio = guardedRatio(consumed, goal);
+  if (ratio === null) {
     return { fraction: 0, remaining: 0, over: 0, hasGoal: false };
   }
   return {
-    fraction: Math.min(consumed / goal, 1),
-    remaining: Math.max(goal - consumed, 0),
-    over: Math.max(consumed - goal, 0),
+    fraction: Math.min(ratio, 1),
+    remaining: Math.max((goal as number) - consumed, 0),
+    over: Math.max(consumed - (goal as number), 0),
     hasGoal: true,
   };
 }

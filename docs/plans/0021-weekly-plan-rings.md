@@ -1,6 +1,6 @@
 # Plan: Weekly view — Saturday-first bars + four "plan progress" rings
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user web-verify pending)
 - **Created**: 2026-08-27
 - **Plan #**: 0021
 
@@ -277,4 +277,32 @@ folded in — none blocks coding.
   and rank stay mutually consistent (only the pre-existing tz caveat remains). Confirmed sound.
 
 ## Execution log
-<!-- Filled during execution. -->
+_Executed 2026-08-27. Landed to the approved plan (all six should-fixes) — no deviations._
+
+**Files.**
+- `lib/guarded-ratio.ts` (**new, SF4**) — `guardedRatio(consumed, goal)` → raw ratio | null
+  (`goal > 0` only). One source of truth for consumed÷goal.
+- `lib/week-plan-progress.ts` (**new**) — pure `weekPlanProgress(days, goals)` → `{ elapsed,
+  calories, protein, carbs, fat }`. `elapsed = ((getUTCDay(todayKey)+1)%7)+1` (SF1), defensive
+  `EMPTY` when `days` empty or has no `isToday` day; this-week consumed = `days.slice(len-elapsed)`
+  tail; per-metric via `guardedRatio(value, dailyGoal*elapsed)`. No-log header + typed to the
+  existing `DayTotals`/`DailyGoals` `Pick<>` shapes (SF5).
+- `lib/use-weekly-totals.tsx` — added `isToday: i === 0` to `DayTotals` (seed day); `days` stays
+  chronological.
+- `screens/dashboard-screen.tsx` (**SF4**) — `progressFor` now calls `guardedRatio` (behavior
+  unchanged: still derives clamped `fraction` + `remaining`/`over`).
+- `screens/trend-screen.tsx` — bars re-ordered Sat→Fri via `saturdayFirstRank(key)` sort
+  (display-only; `days` untouched), `DayBar isToday={day.isToday}`; new rings `<Card>` computed
+  AFTER the gates (SF2) with title "This week's plan · N of 7 days"; no-goal hint gated on
+  `!goalsLoading && goals == null`, `goalsLoading` → an `ActivityIndicator`, never the hint (SF3);
+  four `MetricRing`s (dashboard-local, OQ1) using a pure-`View` `ProgressRing` donut (two-layer
+  border-arc technique, no SVG); over-target uses the `danger` token (OQ2); center string capped
+  `999%+` + `numberOfLines`/`adjustsFontSizeToFit`; `percent===null` → "—", no consumed/target.
+
+**Deviations.** None.
+
+**Verification.** `npx tsc --noEmit` exit 0. `npx expo lint` exit 0 (clean). Full `npx expo
+export --platform web` exit 0 — the new trend code ("This week's plan"/"weekly progress") is
+present in the compiled production bundle (the entry route is code-split, so a full export, not
+the entry.bundle curl, is the authoritative check — noted for future 0021-style route work).
+Grep gate: no `console.*` in the two new libs or the trend screen. **User web-verify pending.**
