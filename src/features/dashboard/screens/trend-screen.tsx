@@ -98,7 +98,7 @@ export default function TrendScreen() {
     Math.round(loggedDays.reduce((sum, d) => sum + select(d), 0) / loggedDays.length);
 
   return (
-    <Screen scroll>
+    <Screen scroll contentContainerStyle={styles.screenContent}>
       <Card style={styles.chartCard}>
         <Text type="small" themeColor="textSecondary">
           Calories · last 7 days
@@ -220,6 +220,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   centerText: { textAlign: 'center' },
+  // Vertical gap between the chart card and the summary card.
+  screenContent: { gap: Spacing.four },
   chartCard: { gap: Spacing.three },
   chart: {
     flexDirection: 'row',
