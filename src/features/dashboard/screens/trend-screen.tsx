@@ -23,6 +23,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useUser } from '@/lib/auth';
 import { Button, Card, Screen, Text } from '@/shared/ui';
 
+import { useDailyGoals } from '../lib/use-daily-goals';
 import { useWeeklyTotals, type DayTotals } from '../lib/use-weekly-totals';
 
 const CHART_HEIGHT = 180;
@@ -43,11 +44,25 @@ export default function TrendScreen() {
   const tz = profile?.timezone?.trim() || getDeviceTimezone() || 'UTC';
   const { days, loading, error, refetch } = useWeeklyTotals(tz);
 
-  // Reflect a newly-logged / edited meal on return to the screen.
+  // Calorie goal for the reference line — NON-FATAL (never gates the chart; plan 0019).
+  // Derived during render (a hold-last-value cache via ref/state is blocked by the
+  // react-compiler lint rules); the brief line-drop while a goals refetch is in flight is
+  // masked by the totals loading gate (the whole chart is a spinner then, and the single-row
+  // goals query resolves before the 8-day totals query). Health data — never logged.
+  const { goals, loading: goalsLoading, refetch: refetchGoals } = useDailyGoals();
+  const goalCal =
+    !goalsLoading && typeof goals?.calories === 'number' && goals.calories > 0
+      ? goals.calories
+      : null;
+
+  // Reflect a newly-logged / edited meal + an edited goal on return to the screen.
   useFocusEffect(
     useCallback(() => {
-      if (userId) refetch();
-    }, [userId, refetch]),
+      if (userId) {
+        refetch();
+        refetchGoals();
+      }
+    }, [userId, refetch, refetchGoals]),
   );
 
   if (profileLoading || loading) {
@@ -76,6 +91,9 @@ export default function TrendScreen() {
   }
 
   const maxCalories = Math.max(...days.map((d) => d.calories));
+  // Domain headroom ONLY when a goal exists, so the line never pins at the ceiling and the
+  // no-goal path stays identical to 0018 (bars fill fully to maxCalories). (plan 0019, B1)
+  const domainMax = goalCal != null ? Math.max(maxCalories, goalCal * 1.1) : maxCalories;
   const avg = (select: (d: DayTotals) => number) =>
     Math.round(loggedDays.reduce((sum, d) => sum + select(d), 0) / loggedDays.length);
 
@@ -84,13 +102,15 @@ export default function TrendScreen() {
       <Card style={styles.chartCard}>
         <Text type="small" themeColor="textSecondary">
           Calories · last 7 days
+          {goalCal != null ? ` · goal ${round(goalCal)} kcal` : ''}
         </Text>
         <View style={styles.chart}>
           {days.map((day, i) => (
             <DayBar
               key={day.key}
               day={day}
-              maxCalories={maxCalories}
+              domainMax={domainMax}
+              goalCal={goalCal}
               isToday={i === days.length - 1}
             />
           ))}
@@ -117,17 +137,25 @@ export default function TrendScreen() {
 
 function DayBar({
   day,
-  maxCalories,
+  domainMax,
+  goalCal,
   isToday,
 }: {
   day: DayTotals;
-  maxCalories: number;
+  domainMax: number;
+  goalCal: number | null;
   isToday: boolean;
 }) {
   const theme = useTheme();
   const hasMeals = day.mealCount > 0;
-  // Guard maxCalories>0 so an all-zero week renders flat empty bars (no divide-by-zero).
-  const height = (maxCalories > 0 ? (day.calories / maxCalories) * 100 : 0) + '%';
+  // Guard domainMax>0 so an all-zero + no-goal week renders flat empty bars (no /0).
+  const height = (domainMax > 0 ? (day.calories / domainMax) * 100 : 0) + '%';
+  // The goal line shares the track's coordinate space with the fill (both % of the track),
+  // so it aligns with no pixel math; clamp ≤95% so it never sits on the track's top edge.
+  const goalBottom =
+    goalCal != null && domainMax > 0
+      ? Math.min((goalCal / domainMax) * 100, 95) + '%'
+      : null;
   return (
     <View style={styles.col}>
       <Text type="smallBold" style={styles.calLabel}>
@@ -144,6 +172,14 @@ function DayBar({
             },
           ]}
         />
+        {goalBottom != null && (
+          <View
+            style={[
+              styles.goalLine,
+              { bottom: goalBottom as DimensionValue, backgroundColor: theme.textSecondary },
+            ]}
+          />
+        )}
       </View>
       <Text type="small" themeColor="textSecondary">
         {day.weekdayLabel}
@@ -201,6 +237,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   fill: { width: '100%', borderRadius: Radius.sm },
+  goalLine: { position: 'absolute', left: 0, right: 0, height: 1.5 },
   summaryCard: { gap: Spacing.two },
   macros: { gap: Spacing.one, marginTop: Spacing.one },
   macroRow: { flexDirection: 'row', justifyContent: 'space-between' },

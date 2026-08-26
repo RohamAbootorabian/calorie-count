@@ -1192,3 +1192,29 @@ a guarded root `Stack.Screen` over the tabs (the `meal-edit` precedent).
 
 **Verified.** `tsc` exit 0; `expo lint` clean; web bundle HTTP 200 · 3.9 MB · complete.
 User web-verify pending before Done. Native `Intl` tz rides the deferred iPhone pass.
+
+---
+
+## 2026-08-26 — Plan 0019 executed: calorie goal line on the weekly trend (verify pending)
+
+**What.** A horizontal reference line across the weekly-trend bars at the user's daily
+calorie goal (`useDailyGoals().goals.calories`), with the goal shown in the chart caption
+("· goal N kcal"). Days above the line ate over target, below = under. Pure client, one
+file, no migration.
+
+**Why.** The 0018 bars had no reference point — you couldn't tell over/under target. This
+is the named 0018 follow-up ("goal overlay line").
+
+**How.** Reused the dashboard-grained `useDailyGoals` (strict Pick allowlist, non-fatal).
+The chart is NOT restructured (review SF1): the line is an absolutely-positioned segment
+INSIDE each existing `DayBar` track, so its `bottom%` and the bar-fill `height%` share the
+same track coordinate space and align with no pixel math (7 aligned segments). Bars scale to
+`domainMax = goalCal != null ? max(maxCalories, goalCal*1.1) : maxCalories` — goal-only
+headroom (review B1) so the line is never pinned at the ceiling and the no-goal path stays
+identical to 0018. Deviation: the planned ref/state "hold last goal" (SF4) hit the
+react-compiler lint rules (`react-hooks/refs` / `set-state-in-effect`), so `goalCal` is
+derived during render guarded on `!goalsLoading`; the transient is masked by the totals
+loading gate (goals resolves before the 8-day totals query).
+
+**Verified.** `tsc` exit 0; `expo lint` clean; web bundle HTTP 200. User web-verify pending
+before Done. Native line render rides the deferred iPhone pass.
