@@ -26,7 +26,7 @@ import { Button, Card, Screen, Text } from '@/shared/ui';
 import { useDailyGoals } from '../lib/use-daily-goals';
 import { useWeeklyTotals, type DayTotals } from '../lib/use-weekly-totals';
 
-const CHART_HEIGHT = 180;
+const CHART_HEIGHT = 200;
 
 function round(n: number): number {
   return Math.round(n);
@@ -181,7 +181,7 @@ function DayBar({
           />
         )}
       </View>
-      <Text type="small" themeColor="textSecondary">
+      <Text type="small" themeColor="textSecondary" style={styles.dayLabel}>
         {day.weekdayLabel}
       </Text>
     </View>
@@ -227,8 +227,10 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     height: CHART_HEIGHT,
   },
-  col: { flex: 1, alignItems: 'center', gap: Spacing.one, height: '100%' },
-  calLabel: { minHeight: 16 },
+  col: { flex: 1, alignItems: 'center', gap: Spacing.two, height: '100%' },
+  calLabel: { minHeight: 16, marginBottom: Spacing.one },
+  // Extra breathing room so the weekday sits clearly below the bars, not glued to them.
+  dayLabel: { marginTop: Spacing.two },
   track: {
     flex: 1,
     width: '100%',
