@@ -17,7 +17,7 @@ import { useCallback, type ReactNode } from 'react';
 import { ActivityIndicator, StyleSheet, View, type DimensionValue } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
-import { getDeviceTimezone } from '@/features/auth/lib/profile-form';
+import { resolveTimezone } from '@/features/auth/lib/profile-form';
 import { useProfile } from '@/features/auth/lib/use-profile';
 import { useTheme } from '@/hooks/use-theme';
 import { useUser } from '@/lib/auth';
@@ -56,7 +56,7 @@ export default function TrendScreen() {
     error: profileError,
     refetch: refetchProfile,
   } = useProfile();
-  const tz = profile?.timezone?.trim() || getDeviceTimezone() || 'UTC';
+  const tz = resolveTimezone(profile?.timezone);
   const { days, loading, error, refetch } = useWeeklyTotals(tz);
 
   // Calorie goal for the reference line — NON-FATAL (never gates the chart; plan 0019).

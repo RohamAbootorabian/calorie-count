@@ -1304,3 +1304,43 @@ not the entry.bundle curl — is the authoritative web check here). No metric/go
 User web-verify pending before Done (Sat→Fri order + today highlight on a non-Friday; ring
 percentages; over-target color; no-goal hint). Pure-View ring render on-device rides the deferred
 iPhone pass.
+
+---
+
+## 2026-08-27 — Plan 0022 executed: daily/weekly timezone fix (device zone, not the UTC default) (verify pending)
+
+**What.** The daily dashboard + weekly trend now bucket "today" in the user's **device timezone**
+instead of the stored `'UTC'`. A new pure `resolveTimezone(storedTz)` honors a stored zone only if
+it's a real, explicitly-set, Intl-constructable IANA zone; a stored `'UTC'` (the DB default) or
+blank/invalid value falls back to the device zone. Both bucket consumers (dashboard, trend) use it.
+
+**Why (bug, confirmed on-device).** `profiles.timezone` is `not null default 'UTC'` and NOTHING
+writes the device zone (onboarding writes only goals; the row is created by the signup trigger with
+the default; only the manual Settings "Use device timezone" heal ever sets it). The screens
+resolved `tz = profile?.timezone?.trim() || getDeviceTimezone() || 'UTC'`, and the non-blank
+`'UTC'` short-circuited the device fallback → "today" bucketed in UTC. For a user in Tehran
+(UTC+3:30), two meals logged 08-26 19:32 local still counted as "today" at 08-27 00:47 local (21:17
+UTC on the 26th); the day rolled over at 03:30 local, not midnight.
+
+**How.** `resolveTimezone` treats a stored value equal to `DB_DEFAULT_TIMEZONE` ('UTC') as "unset"
+and overrides it with the device zone. Safe because the only writer of a real zone is the Settings
+heal (device zone) — there's no free-text tz entry, so a stored 'UTC' is unambiguously the default,
+never a deliberate choice (a genuine-UTC user's device zone is 'UTC' too → same result). Pure
+client, no write, no migration.
+
+**Review (4-lens, 0 blockers) → revised to resolver-only.** The onboarding tz-write was DB-honesty
+only (the resolver alone fixes behavior for all users), so it + the existing-row auto-heal were
+deferred to one follow-up, removing the partial-upsert clobber + fire-and-forget risks. Folded:
+SF1 named `DB_DEFAULT_TIMEZONE` + documented invariant; SF2 swapped the `getDeviceTimezone` import
+(else lint breaks); SF3 hardened the resolver against a stored zone this device's Intl can't
+construct (try/catch → treat as unset). The user's on-device repro proved their Hermes build honors
+the `timeZone` option, so the fix is observable there.
+
+**Separate follow-ups (noted, out of scope).** (1) Persist the device zone (onboarding write +
+heal existing 'UTC' rows) for DB honesty. (2) The midnight-roll staleness — `todayStr` is frozen
+in a `useMemo([rows, tz])`, so a screen left open across midnight won't re-bucket without a
+refetch; the correct zone now puts that boundary at 00:00 (higher-traffic), raising its priority.
+
+**Verified.** `tsc` exit 0; `expo lint` clean; full `expo export --platform web` exit 0 with the
+resolver in the bundle. No tz logged; resolver is pure. User device-verify pending (daily view rolls
+at local midnight).

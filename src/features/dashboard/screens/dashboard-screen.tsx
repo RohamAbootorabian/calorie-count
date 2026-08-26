@@ -23,7 +23,7 @@ import { ActivityIndicator, type DimensionValue, StyleSheet, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BottomTabInset, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
-import { getDeviceTimezone } from '@/features/auth/lib/profile-form';
+import { resolveTimezone } from '@/features/auth/lib/profile-form';
 import { useProfile } from '@/features/auth/lib/use-profile';
 import { useTheme } from '@/hooks/use-theme';
 import { useUser } from '@/lib/auth';
@@ -66,7 +66,7 @@ export default function DashboardScreen() {
     error: profileError,
     refetch: refetchProfile,
   } = useProfile();
-  const tz = profile?.timezone?.trim() || getDeviceTimezone() || 'UTC';
+  const tz = resolveTimezone(profile?.timezone);
   const {
     totals,
     loading: totalsLoading,

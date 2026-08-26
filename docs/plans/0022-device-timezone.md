@@ -1,6 +1,6 @@
 # Plan: Fix the daily/weekly timezone — use the device zone, don't sit on the 'UTC' default
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** (revised to resolver-only) → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved (resolver-only)~~ → ~~In Progress~~ → **Done** (user device-verify pending)
 - **Created**: 2026-08-27
 - **Plan #**: 0022
 
@@ -215,4 +215,23 @@ misfire. DST unaffected (same-formatter string compare). Fixed-offset IANA zones
 pass through correctly.
 
 ## Execution log
-<!-- Filled during execution. -->
+_Executed 2026-08-27. Resolver-only, as revised — no deviations._
+
+**Files.**
+- `auth/lib/profile-form.ts` — added `DB_DEFAULT_TIMEZONE = 'UTC'` (tied by comment to the schema
+  default), a private `isConstructableZone(tz)` (SF3 try/catch guard against `makeDayFormatter`'s
+  silent UTC fallback), and the pure `resolveTimezone(storedTz)`: honors a stored zone only if
+  trimmed && ≠ the DB default && Intl-constructable, else `getDeviceTimezone() ?? 'UTC'`. Documented
+  the "stored 'UTC' ≡ unset" invariant (SF1) + the future-free-text-UI caveat. No I/O, no logging.
+- `dashboard-screen.tsx` — swapped the `getDeviceTimezone` import → `resolveTimezone` (SF2);
+  `const tz = resolveTimezone(profile?.timezone)`.
+- `trend-screen.tsx` — same swap + `const tz = resolveTimezone(profile?.timezone)`.
+
+**Deviations.** None. (Persistence — onboarding write + existing-row heal — deferred to a single
+follow-up per the review scope decision.)
+
+**Verification.** `npx tsc --noEmit` exit 0. `npx expo lint` exit 0 (the import swap kept it clean).
+Full `npx expo export --platform web` exit 0 with `resolveTimezone` present in the compiled bundle.
+Grep gate: no `console.*` / no tz logged in the resolver; pure, no new `select`. **User
+device-verify pending** — the real check is the daily view now rolling at true local midnight
+(the user's iPhone build honors `timeZone`, proven by the original repro).

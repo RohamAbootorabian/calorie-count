@@ -40,6 +40,46 @@ export function getDeviceTimezone(): string | null {
   }
 }
 
+/**
+ * The `profiles.timezone` column default (`20260619102510_initial_schema.sql`:
+ * `timezone text not null default 'UTC'`). A stored value equal to this is treated
+ * as "never set" by `resolveTimezone` — see the invariant there.
+ */
+const DB_DEFAULT_TIMEZONE = 'UTC';
+
+/** Can this device's `Intl` actually construct a formatter for `tz`? (Guards the
+ *  formatter's silent UTC fallback on an unknown/cross-device zone — plan 0022 SF3.) */
+function isConstructableZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the timezone the daily/weekly buckets should use (plan 0022). A stored
+ * zone is honored ONLY if it's a real, explicitly-set, constructable IANA zone;
+ * otherwise we fall back to the device zone.
+ *
+ * INVARIANT: a stored value equal to `DB_DEFAULT_TIMEZONE` ('UTC') is treated as
+ * "unset" and overridden by the device zone. This is safe because the ONLY writer
+ * of a real zone today is the Settings "Use device timezone" heal (which writes the
+ * *device* zone) — there is no free-text timezone entry, so a stored 'UTC' is
+ * unambiguously the DB default, never a deliberate choice. A user genuinely in UTC
+ * has a device zone of 'UTC' too, so the result is still 'UTC' — no misfire. A
+ * future "pick your timezone" UI that could persist a literal 'UTC' for a non-UTC
+ * user MUST revisit this rule.
+ *
+ * Pure, no I/O, never logs the value.
+ */
+export function resolveTimezone(storedTz: string | null | undefined): string {
+  const tz = storedTz?.trim();
+  if (tz && tz !== DB_DEFAULT_TIMEZONE && isConstructableZone(tz)) return tz;
+  return getDeviceTimezone() ?? DB_DEFAULT_TIMEZONE;
+}
+
 /** Human-facing display for a stored timezone value (N3): null/blank → "Not set". */
 export function timezoneDisplay(timezone: string | null | undefined): string {
   const tz = timezone?.trim();
