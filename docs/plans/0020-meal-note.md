@@ -1,6 +1,6 @@
 # Plan: Text note for a meal — sent to the AI + saved & editable
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user web-verify pending)
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user web-verified 2026-08-26 ✓)
 - **Created**: 2026-08-26
 - **Plan #**: 0020
 
@@ -358,4 +358,5 @@ string — so it was dropped; behavior is unchanged.)
 **Verification.** `npx tsc --noEmit` exit 0. `npx expo lint` exit 0 (clean). Web bundle HTTP
 200, ~3.9 MB, complete (`sourceMappingURL` tail, not an error envelope). Grep gate: no
 `console.*note` in the client helper / capture screen / edge; no new `select('*')`. Migration +
-edge deployed to prod. **User web-verify still pending** before this is truly Done.
+edge deployed to prod. **User web-verified 2026-08-26** — note changed the estimate, the
+conflict test worked, edit-and-reopen persisted, empty-note regression clean. **DONE.**

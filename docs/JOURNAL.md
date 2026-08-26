@@ -1221,7 +1221,7 @@ before Done. Native line render rides the deferred iPhone pass.
 
 ---
 
-## 2026-08-26 — Plan 0020 executed: meal text note → AI + saved & editable (verify pending)
+## 2026-08-26 — Plan 0020 DONE: meal text note → AI + saved & editable (user web-verified)
 
 **What.** An optional free-text note in Capture: after the photo uploads, a multiline
 "Add a note (optional)" field appears before Analyze. Its text is sent WITH the photo to
