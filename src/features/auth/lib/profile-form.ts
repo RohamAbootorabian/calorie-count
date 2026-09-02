@@ -45,7 +45,7 @@ export function getDeviceTimezone(): string | null {
  * `timezone text not null default 'UTC'`). A stored value equal to this is treated
  * as "never set" by `resolveTimezone` — see the invariant there.
  */
-const DB_DEFAULT_TIMEZONE = 'UTC';
+export const DB_DEFAULT_TIMEZONE = 'UTC';
 
 /** Can this device's `Intl` actually construct a formatter for `tz`? (Guards the
  *  formatter's silent UTC fallback on an unknown/cross-device zone — plan 0022 SF3.) */

@@ -1,6 +1,6 @@
 # Plan: Persist the device timezone (heal the stored 'UTC' default) — DB honesty
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user verify pending)
 - **Plan #**: 0024
 - **Created**: 2026-09-02
 
@@ -193,4 +193,24 @@ export is the clean DRY sentinel. `(app)/_layout.tsx` is the correct once-per-se
 (persists across tab switches + deep links; unmounts on sign-out).
 
 ## Execution log
-<!-- Filled during execution. -->
+_Executed 2026-09-02. Landed to the approved plan (both should-fixes) — no deviations._
+
+**Files.**
+- `auth/lib/profile-form.ts` — promoted `DB_DEFAULT_TIMEZONE` to `export` (shared sentinel; no
+  logic change).
+- `auth/lib/use-timezone-heal.tsx` (**new**) — `useTimezoneHeal()`: once-per-mount (`healedFor`
+  ref keyed on `userId`, defensive), skips when no `userId` / no device zone / device is
+  `DB_DEFAULT_TIMEZONE`; else a fire-and-forget conditional UPDATE
+  `.update({ timezone: device }).eq('id', userId).eq('timezone', DB_DEFAULT_TIMEZONE)` with a
+  two-arg `.then(()=>{}, ()=>{})` (executes the builder + swallows both a rejected promise and a
+  resolved `{error}`). Doc header + no-log (SF2/privacy).
+- `app/(app)/_layout.tsx` — calls `useTimezoneHeal()` with a one-line explaining comment (SF2);
+  renders `<AppTabs />` unchanged.
+
+**Deviations.** None.
+
+**Verification.** `npx tsc --noEmit` exit 0. `npx expo lint` exit 0. Full `npx expo export
+--platform web` exit 0 with `useTimezoneHeal` in the compiled bundle. Grep gate: no `console.*` in
+the hook; it's a single-column `.update()` (not an upsert). **User verify pending** — sign in on a
+`'UTC'` account, land on Home, open Settings → timezone shows the real device zone (was "UTC"),
+with `display_name`/`units` unchanged; re-open → no repeat write.

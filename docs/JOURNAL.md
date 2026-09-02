@@ -1391,3 +1391,36 @@ zero network cost. Confirmed: no pre-midnight data loss, single-midnight window 
 **Verified.** `tsc` 0; `expo lint` 0 (no warnings); full `expo export --platform web` 0 with the
 hook in the bundle. No tz/day/metric logged; fetch-effect deps unchanged. User device-verify pending
 (open/background across midnight → rolls without navigating).
+
+---
+
+## 2026-09-02 — Plan 0024 executed: persist the device timezone (heal the stored UTC default) (verify pending)
+
+**What.** A signed-in user whose `profiles.timezone` is still the DB default `'UTC'` while their
+device reports a real non-UTC zone now gets that zone written automatically (once per session,
+best-effort), so Settings shows the real zone without the manual "Use device timezone" tap. A
+genuine-UTC user, or one with a real stored zone, is left untouched.
+
+**Why.** DB-honesty follow-up to 0022: behavior was already correct (the resolver treats a stored
+`'UTC'` as the device zone), but Settings still displayed "UTC" and the DB didn't reflect reality.
+
+**How.** New `useTimezoneHeal()` mounted once in `(app)/_layout.tsx` (the authenticated area, after
+onboarding — covers new + existing users). It fires a single-column conditional UPDATE
+`update({timezone: device}).eq('id', userId).eq('timezone', 'UTC')` — touches only the timezone
+column (can't clobber display_name/units, unlike an upsert), idempotent (after the heal the row is
+no longer 'UTC' → the next session's UPDATE matches 0 rows), owner-scoped by `.eq('id')` on top of
+the `profiles_update` RLS. Fire-and-forget, rejection swallowed, nothing logged. `DB_DEFAULT_TIMEZONE`
+promoted to an export so the hook + resolver share one sentinel. No onboarding-wizard change, no
+read, no migration.
+
+**Review (4-lens, 0 blockers).** SF1 (edge): "no behavior change" was inaccurate — persisting a
+concrete zone flips the resolver from device-follow (for a stored 'UTC') to stored-zone-authoritative,
+so a traveler pins to the healed zone until re-healing in Settings; accepted explicitly (same as a
+manual heal; matches 0022's approved model) and reframed in the plan. SF2 (arch): the layout-mounted
+DB write got a self-explaining call-site comment + a hook doc header. NITs folded: once-per-mount
+(idempotent) wording, first-write-wins for concurrent devices, updated_at bump + missing-row no-op
+noted, no-log grep gate, healedFor is defensive-only.
+
+**Verified.** `tsc` 0; `expo lint` 0; full `expo export --platform web` 0 with the hook in the
+bundle. No tz/error logged; single-column update (not upsert). User verify pending (Settings shows
+the real zone; display_name/units unchanged; no repeat write on relaunch).
