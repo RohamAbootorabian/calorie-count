@@ -1,6 +1,6 @@
 # Plan: Fix the daily/weekly timezone — use the device zone, don't sit on the 'UTC' default
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved (resolver-only)~~ → ~~In Progress~~ → **Done** (user device-verify pending)
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved (resolver-only)~~ → ~~In Progress~~ → **Done** (user-verified 2026-09-02 ✓)
 - **Created**: 2026-08-27
 - **Plan #**: 0022
 

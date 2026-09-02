@@ -1,6 +1,6 @@
 # Plan: Weekly view — Saturday-first bars + four "plan progress" rings
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user web-verify pending)
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user-verified 2026-09-02 ✓)
 - **Created**: 2026-08-27
 - **Plan #**: 0021
 
