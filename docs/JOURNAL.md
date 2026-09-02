@@ -1358,3 +1358,36 @@ fit one line while the short macro values stay at base size — keeps the 4-acro
 rings — no logic/data change.
 
 **Verified.** `tsc` exit 0; `expo lint` clean; full `expo export --platform web` exit 0.
+
+---
+
+## 2026-09-02 — Plan 0023 executed: daily/weekly "today" rolls at midnight + on resume (verify pending)
+
+**What.** The daily dashboard and weekly trend now advance to the new day on their own — at local
+midnight while left open (≤~60 s) and immediately on resume from background — without navigating
+or a network refetch. New `useCurrentDayKey(tz)` hook produces a live `YYYY-MM-DD`-in-tz key;
+both totals hooks consume it as "today" in their bucket memo.
+
+**Why (0022 follow-up).** "today" was computed with `new Date()` inside a `useMemo([rows, tz])`, so
+it froze until a refetch (navigation focus) — `useFocusEffect` doesn't fire on background→foreground
+resume. After the 0022 tz fix put the boundary at true local midnight, a user reopening the app
+after midnight still saw yesterday's meals as "today".
+
+**How.** `useCurrentDayKey` force-re-renders via a `useReducer` tick from a 60 s interval + an
+`AppState 'active'` listener; the day key is `useMemo(() => { void tick; return
+makeDayFormatter(tz).format(new Date()); }, [tz, tick])`. Feeding it into the bucket memos makes the
+roll a pure re-bucket of already-fetched rows (the 48 h / 8-day windows already cover a single
+midnight), so no refetch — the fetch effects stay keyed `[userId, reloadKey]`.
+
+**Review (4-lens) — 1 blocker resolved.** B1 (found by correctness + edge independently): under
+React Compiler a render-computed `new Date()` key is memoized on `[tz]` and never advances on a
+tick → the fix would no-op; resolved by making `tick` a genuine `useMemo` dep (`void tick` in-body
+so exhaustive-deps agrees). SFs folded: `AppState` cleanup via `subscription.remove()` (RN 0.85 has
+no static `removeEventListener`); handler gated on `state === 'active'` (iOS `inactive` fires
+constantly); `todayKey` ONLY in the bucket memo deps, never the fetch effect (no nightly refetch);
+no-log header. OQ1 (foreground refetch) deferred — rebucket-only fully fixes the reported bug at
+zero network cost. Confirmed: no pre-midnight data loss, single-midnight window math sound.
+
+**Verified.** `tsc` 0; `expo lint` 0 (no warnings); full `expo export --platform web` 0 with the
+hook in the bundle. No tz/day/metric logged; fetch-effect deps unchanged. User device-verify pending
+(open/background across midnight → rolls without navigating).

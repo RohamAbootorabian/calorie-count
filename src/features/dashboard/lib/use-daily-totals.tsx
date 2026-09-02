@@ -32,6 +32,7 @@ import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 
 import { makeDayFormatter } from './day-formatter';
+import { useCurrentDayKey } from './use-current-day-key';
 
 /** Only the columns we sum — typed allowlist (over-fetch = compile error). */
 type MealRow = Pick<
@@ -67,6 +68,10 @@ export function useDailyTotals(tz: string): DailyTotalsStatus {
 
   const [reloadKey, setReloadKey] = useState(0);
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  // Live "today" (plan 0023) — advances at local midnight / on resume so the bucket
+  // re-buckets without a refetch. Feeds the bucket memo ONLY (never the fetch effect).
+  const todayKey = useCurrentDayKey(tz);
 
   type Outcome =
     | { userId: string; reloadKey: number; kind: 'ok'; rows: MealRow[] }
@@ -116,12 +121,11 @@ export function useDailyTotals(tz: string): DailyTotalsStatus {
   const totals = useMemo<DailyTotals>(() => {
     if (!rows) return ZERO;
     const fmt = makeDayFormatter(tz);
-    const todayStr = fmt.format(new Date());
     const acc: DailyTotals = { ...ZERO };
     for (const r of rows) {
       const d = new Date(r.eaten_at);
       if (Number.isNaN(d.getTime())) continue;
-      if (fmt.format(d) !== todayStr) continue; // not today in `tz`.
+      if (fmt.format(d) !== todayKey) continue; // not today in `tz` (live key, plan 0023).
       acc.calories += r.total_calories;
       acc.protein += r.total_protein;
       acc.carbs += r.total_carbs;
@@ -129,7 +133,7 @@ export function useDailyTotals(tz: string): DailyTotalsStatus {
       acc.mealCount += 1;
     }
     return acc;
-  }, [rows, tz]);
+  }, [rows, tz, todayKey]);
 
   return useMemo<DailyTotalsStatus>(() => {
     if (!userId) return { loading: false, totals: ZERO, error: false, refetch };

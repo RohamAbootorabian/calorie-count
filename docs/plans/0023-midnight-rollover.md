@@ -1,6 +1,6 @@
 # Plan: Daily/weekly "today" rolls over at midnight (and on resume) without a refetch
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user device-verify pending)
 - **Plan #**: 0023
 - **Created**: 2026-09-02
 
@@ -224,4 +224,25 @@ the interval can't cover resume; AppState can't cover foreground-left-open). No 
 tick never touches the fetch effect or `mounted`/`active` guards).
 
 ## Execution log
-<!-- Filled during execution. -->
+_Executed 2026-09-02. Landed to the approved plan (blocker + all should-fixes) — no deviations._
+
+**Files.**
+- `dashboard/lib/use-current-day-key.tsx` (**new**) — `useCurrentDayKey(tz)`: `useReducer` tick +
+  `todayKey = useMemo(() => { void tick; return makeDayFormatter(tz).format(new Date()); }, [tz,
+  tick])` (B1 — `void tick` in-body so exhaustive-deps sees a real use and the compiler can't freeze
+  the key on `[tz]`); effect registers a 60 s `setInterval` + `AppState 'active'` listener, cleanup
+  `clearInterval` + `sub.remove()` (SF1); handler gated on `next === 'active'` (SF2); no-log header.
+- `dashboard/lib/use-daily-totals.tsx` — `const todayKey = useCurrentDayKey(tz)`; bucket memo uses
+  `todayKey` (dropped the in-memo `new Date()`), deps `[rows, tz, todayKey]`; fetch effect deps
+  UNCHANGED `[userId, reloadKey]` (SF3).
+- `dashboard/lib/use-weekly-totals.tsx` — same: seed from `todayKey`, deps `[rows, tz, todayKey]`;
+  fetch effect deps unchanged (SF3).
+
+**Deviations.** None. (One lint pass needed the `void tick` in-body read to clear an
+`exhaustive-deps` "unnecessary dependency" warning without dropping the load-bearing `tick` dep.)
+
+**Verification.** `npx tsc --noEmit` exit 0. `npx expo lint` exit 0, zero warnings. Full `npx expo
+export --platform web` exit 0 with `useCurrentDayKey`/`AppState` in the compiled bundle. Grep gate:
+no `console.*` in the three files; both fetch effects still keyed exactly `[userId, reloadKey]`.
+**User device-verify pending** — leave the app open / background it across local midnight and
+confirm "today" rolls (dashboard resets, weekly window advances) without navigating.

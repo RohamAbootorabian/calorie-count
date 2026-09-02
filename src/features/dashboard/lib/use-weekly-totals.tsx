@@ -32,6 +32,7 @@ import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 
 import { makeDayFormatter } from './day-formatter';
+import { useCurrentDayKey } from './use-current-day-key';
 
 /** Only the columns we sum — typed allowlist (over-fetch = compile error). */
 type MealRow = Pick<
@@ -77,6 +78,10 @@ export function useWeeklyTotals(tz: string): WeeklyTotalsStatus {
 
   const [reloadKey, setReloadKey] = useState(0);
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
+
+  // Live "today" (plan 0023) — advances at local midnight / on resume so the 7-day
+  // window + `isToday` re-seed without a refetch. Feeds the bucket memo ONLY.
+  const todayKey = useCurrentDayKey(tz);
 
   type Outcome =
     | { userId: string; reloadKey: number; kind: 'ok'; rows: MealRow[] }
@@ -127,8 +132,9 @@ export function useWeeklyTotals(tz: string): WeeklyTotalsStatus {
     if (!rows) return EMPTY_DAYS;
     const fmt = makeDayFormatter(tz);
 
-    // Today's local date → a noon-UTC seed (DST-proof), then walk back to build 7 days.
-    const [y, m, d] = fmt.format(new Date()).split('-').map(Number);
+    // Today's local date (live key, plan 0023) → a noon-UTC seed (DST-proof), then
+    // walk back to build 7 days.
+    const [y, m, d] = todayKey.split('-').map(Number);
     const seed = new Date(Date.UTC(y, m - 1, d, 12));
 
     const order: DayTotals[] = [];
@@ -162,7 +168,7 @@ export function useWeeklyTotals(tz: string): WeeklyTotalsStatus {
       bucket.mealCount += 1;
     }
     return order;
-  }, [rows, tz]);
+  }, [rows, tz, todayKey]);
 
   return useMemo<WeeklyTotalsStatus>(() => {
     if (!userId) return { loading: false, days: EMPTY_DAYS, error: false, refetch };
