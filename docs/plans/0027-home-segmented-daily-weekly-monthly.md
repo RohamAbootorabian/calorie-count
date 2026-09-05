@@ -1,6 +1,6 @@
 # Plan: Home = a Daily/Weekly/Monthly segmented switcher + monthly bar chart & weekly-average
 
-- **Status**: **Draft** → In Review → Approved → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** (2 stages) → In Progress → Done
 - **Plan #**: 0027
 - **Created**: 2026-09-05
 
@@ -31,69 +31,89 @@ web-export green; user verifies. Pure client — no migration, no new dependency
 - **No change to the ring math, goal line, tz/rollover logic** — those are reused as-is.
 
 ## Proposed approach
-### 1. Home host — the segmented switcher
-`dashboard-screen.tsx` becomes the switcher host: `const [section, setSection] = useState<'daily' |
-'weekly' | 'monthly'>('daily')`. It renders a **`SegmentedControl`** (three `Button`s in a
-`flexDirection:'row'`, `flex:1` each; the selected one `variant="primary"`, the others `secondary` —
-the onboarding `SelectGroup` precedent) pinned at the top (below the safe-area top inset), then the
-active **section component** below it in the scrollable area (bottom tab inset). Only the active
-section is mounted, so only its hooks fetch (rules-of-hooks respected by rendering whole components,
-not conditional hooks).
+_Executed in TWO stages/commits (SF5): **Stage A** = the switcher + extraction + route removal (no
+behavior change beyond nav); **Stage B** = the monthly parity features._
 
-### 2. Three section components (each self-contained)
-Each owns its plumbing (`useResolvedTz` + its data hook(s) + `useDailyGoals` + focus-refetch) and
-renders its own scroll content + inline loading/error/empty gates (a centered spinner/Retry BELOW
-the control, so the switcher stays usable while a section loads):
-- **`DailySection`** — `useDailyTotals` + `<DailySummary>` + the no-meals note (the current
-  `daily-summary-screen` body, inline gates).
-- **`WeeklySection`** — `useWeeklyTotals` + the 7-day bar chart + weekly `PlanRingsCard` + weekly
-  average (the current `trend-screen` body, inline gates).
-- **`MonthlySection`** — `useMonthlyTotals` + the NEW 4-week bar chart + monthly `PlanRingsCard` +
-  the NEW per-week average (below).
+### 1. Home host — owns the frame + shared plumbing (B1, SF1)
+`dashboard-screen.tsx` becomes the switcher host. It owns `useState<'daily'|'weekly'|'monthly'>
+('daily')` (Daily on COLD START, remembered across in-app tab switches), the SHARED plumbing
+(`useResolvedTz` → `tz` + greeting + profile gate; `useDailyGoals` → `goals`; the goals
+focus-refetch), and — critically — the **frame** (B1): an outer themed `View` (`paddingTop:
+insets.top + Spacing.three`), the greeting + the pinned **`SegmentedControl`**, then a SINGLE
+`ScrollView` (`contentContainerStyle`: horizontal padding + `maxWidth: MaxContentWidth`/`alignSelf:
+center` + `paddingBottom: BottomTabInset + Spacing.four`) hosting the active section. The profile
+loading/error gate renders INSIDE the scroll region (control stays usable). It passes `tz` + `goals`
+down to the active section. Only the active section is mounted (whole-component conditional render →
+rules-of-hooks safe; only that section's period hook fetches).
 
-### 3. Extract a shared `CalorieBarChart`
-The weekly 7-day chart (bars + goal line + labels + highlight) and the new monthly 4-week chart are
-the same shape. Extract `dashboard/screens/calorie-bar-chart.tsx`:
-`CalorieBarChart({ bars: { key, label, value, isCurrent }[], domainMax, goalValue })` — the bars +
-goal-line rendering (the current `DayBar` internals, generalized). Weekly passes 7 day-bars
-(`label`=weekday, `isCurrent`=isToday, `goalValue`=daily goal); Monthly passes 4 week-bars
-(`label`="Wk 1"…"Wk 4", `isCurrent`=today's bucket, `goalValue`=weekly goal = daily×7). No visual
-change to the weekly chart.
+`segmented-control.tsx` (**new, B2**): a 3-up toggle ROW of its OWN pressables (small horizontal
+padding, `numberOfLines={1}` + `adjustsFontSizeToFit`), selected = primary fill / unselected =
+secondary — NOT `Button` reused (which wraps "Monthly" at large text).
 
-### 4. Monthly week buckets — extend `useMonthlyTotals`
-Add to `useMonthlyTotals`'s return a `weeks: MonthWeek[]` (length 4) computed from the SAME fetched
-rows in the existing `[rows, tz, todayKey]` memo: bucket each this-month row by
-`bi = Math.min(Math.floor((dayOfMonth − 1) / 7), 3)` (days 22–end → bucket 3). Each `MonthWeek`:
-`{ index, label, calories, protein, carbs, fat, mealCount, days }` where `days` = the number of
-elapsed days in that bucket (7 for buckets 0–2 when reached; the remainder for bucket 3; 0 for a
-future bucket). `todayBucket = Math.min(Math.floor((elapsed − 1)/7), 3)` marks `isCurrent`.
+### 2. Three section components — BARE content (B1), period hook only (SF1)
+Each is bare content (Fragments/Views with `gap`, NO `Screen`/scroll/insets), takes `tz` + `goals`
+as props, owns ONLY its period hook + that hook's gate + a period focus-refetch, and renders its
+loading/error/empty INLINE below the control:
+- **`DailySection`** — `useDailyTotals(tz)` + `<DailySummary totals goals>` + no-meals note.
+- **`WeeklySection`** — `useWeeklyTotals(tz)` + the `CalorieBarChart` (7 day-bars) + weekly
+  `PlanRingsCard(week, goals)` + weekly average.
+- **`MonthlySection`** (Stage B) — `useMonthlyTotals(tz)` + the `CalorieBarChart` (4 week-bars) +
+  monthly `PlanRingsCard` + the per-week average.
 
-### 5. Monthly bar chart + per-week average
-- **Bar chart:** `CalorieBarChart` with the 4 `MonthWeek` bars (`value`=calories), `goalValue` =
-  daily goal × 7 (the weekly goal — one line across all four; the last bucket may legitimately exceed
-  it), `domainMax = goalWeekly != null ? max(maxWeekCalories, goalWeekly×1.1) : maxWeekCalories`,
-  `isCurrent` on `todayBucket`.
+### 3. Extract a shared `CalorieBarChart` (Stage A)
+`dashboard/screens/calorie-bar-chart.tsx`: `CalorieBarChart({ bars: { key, label, value, isCurrent,
+hasData }[], domainMax, goalValue })` — the bars + goal-line rendering (the current `DayBar`
+internals, generalized). `hasData` blanks the top value label when false (SF4 — a future/unlogged
+bucket must not read "0"); the value label gets `numberOfLines={1}`/`adjustsFontSizeToFit` (5-digit
+weekly totals). Weekly passes 7 day-bars (`label`=weekday, `isCurrent`=isToday, `hasData`=mealCount>0,
+`goalValue`=daily goal); Monthly passes 4 week-bars (`label`="Wk 1"…"Wk 4" — formatted IN the
+section, `isCurrent`=today's bucket, `hasData`=bucket mealCount>0, `goalValue`=daily×7). No visual
+change to the weekly chart. Keep the `domainMax>0 ? … : 0` divide guard.
+
+### 4. Monthly week buckets — pure helper + `useMonthlyTotals` (Stage B, SF2)
+New pure `dashboard/lib/month-weeks.ts`: `monthWeeks(...)` → `MonthWeek[]` (length 4) from the
+per-row bucketing `bi = Math.min(Math.floor((dayOfMonth − 1) / 7), 3)` (days 22–end → bucket 3).
+`MonthWeek = { index, isCurrent, calories, protein, carbs, fat, mealCount }` — NO `label` (a view
+concern), NO `days` (unused). `useMonthlyTotals` calls it inside the existing `[rows, tz, todayKey]`
+memo (rows stay private to the hook) and returns `weeks: MonthWeek[]`; `todayBucket =
+Math.min(Math.floor((elapsed − 1)/7), 3)` marks `isCurrent`. A `ZERO_WEEKS` skeleton (4 slots with
+`index`+`isCurrent`, macros 0) is returned in the signed-out/loading/error branches (SF3).
+
+### 5. Monthly bar chart + per-week average (Stage B)
+- **Bar chart:** `CalorieBarChart` with the 4 `MonthWeek` bars (`value`=calories, `label`="Wk N"
+  formatted here, `hasData`=mealCount>0), `goalValue` = daily goal × 7 (a SINGLE flat weekly-goal
+  line across all four; bucket 3 may legitimately exceed it — accepted), `domainMax = goalWeekly !=
+  null ? max(maxWeekCalories, goalWeekly×1.1) : maxWeekCalories`, `isCurrent` on `todayBucket`.
 - **Per-week average card:** mirrors the weekly average — "Monthly average · over N logged week(s)"
   (N = buckets with `mealCount > 0`) → "X kcal / week" + protein/carbs/fat per-week averages =
   `sum(month) ÷ N` (0 logged weeks → the empty state, never NaN).
 
 ## Files to change
-- `src/features/dashboard/screens/dashboard-screen.tsx` — the segmented host (state + control +
-  active section); drops the 0026 push-button row + `DailySummary`/daily hooks (moved to `DailySection`).
-- `src/features/dashboard/screens/segmented-control.tsx` — **new.** The 3-way `Button` switcher.
-- `src/features/dashboard/screens/daily-section.tsx` — **new** (from `daily-summary-screen` body).
-- `src/features/dashboard/screens/weekly-section.tsx` — **new** (from `trend-screen` body).
-- `src/features/dashboard/screens/monthly-section.tsx` — **new** (4-week bars + rings + per-week avg).
-- `src/features/dashboard/screens/calorie-bar-chart.tsx` — **new.** Shared bars + goal-line chart.
-- `src/features/dashboard/lib/use-monthly-totals.tsx` — add `weeks: MonthWeek[]` (+ `MonthWeek` type)
-  to the return; bucket rows into the four fixed day-buckets.
-- **Remove:** `src/features/dashboard/screens/daily-summary-screen.tsx`,
-  `src/features/dashboard/screens/monthly-screen.tsx`, `src/features/dashboard/screens/trend-screen.tsx`
-  (their bodies move into the sections); `src/app/daily.tsx`, `src/app/monthly.tsx`, `src/app/trends.tsx`;
-  and their `Stack.Screen` entries in `src/app/_layout.tsx`. Grep for `/daily`/`/monthly`/`/trends`
-  references and remove them.
-- **Keep/reuse:** `daily-summary.tsx`, `metric-ring.tsx` (`PlanRingsCard`), `plan-progress.ts`,
-  `use-resolved-tz.ts`, `week-plan-progress.ts`, all hooks.
+**Stage A (switcher + extraction + route removal):**
+- `src/features/dashboard/screens/dashboard-screen.tsx` — the host: section state + shared plumbing
+  (`useResolvedTz` + `useDailyGoals` + focus-refetch) + greeting + the frame (pinned control + one
+  ScrollView + insets/clamp, B1) + the active section; drop the 0026 push-button row + `router` push.
+- `src/features/dashboard/screens/segmented-control.tsx` — **new (B2).** Own-pressable 3-up toggle.
+- `src/features/dashboard/screens/daily-section.tsx` — **new**, bare content (from `daily-summary-screen`
+  body), takes `tz`+`goals`, owns `useDailyTotals` + inline gates.
+- `src/features/dashboard/screens/weekly-section.tsx` — **new**, bare content (from `trend-screen` body),
+  owns `useWeeklyTotals`, uses `CalorieBarChart`.
+- `src/features/dashboard/screens/calorie-bar-chart.tsx` — **new.** Shared bars + goal-line chart
+  (`hasData`, fit-shrink value label).
+- **Remove:** `daily-summary-screen.tsx`, `trend-screen.tsx`, `monthly-screen.tsx`; `src/app/daily.tsx`,
+  `src/app/monthly.tsx`, `src/app/trends.tsx`; their `Stack.Screen` entries in `src/app/_layout.tsx`;
+  the 3 `router.push` refs. (Grep-gate `/daily`|`/monthly`|`/trends`.)
+
+**Stage B (monthly parity):**
+- `src/features/dashboard/lib/month-weeks.ts` — **new (SF2).** Pure `monthWeeks(...)` → `MonthWeek[]`
+  (+ `MonthWeek` type; no `label`/`days`).
+- `src/features/dashboard/lib/use-monthly-totals.tsx` — call `monthWeeks` in the memo; return
+  `weeks` (+ `ZERO_WEEKS` skeleton in non-ok branches, SF3).
+- `src/features/dashboard/screens/monthly-section.tsx` — **new**, bare content: `useMonthlyTotals` +
+  `CalorieBarChart` (4 week-bars, "Wk N" labels) + monthly `PlanRingsCard` + per-week average.
+
+**Keep/reuse:** `daily-summary.tsx`, `metric-ring.tsx` (`PlanRingsCard`), `plan-progress.ts`,
+`use-resolved-tz.ts`, `week-plan-progress.ts`, all totals hooks.
 
 ## Data model / schema impact
 **None.** Pure client. `useMonthlyTotals` gains a per-bucket aggregation over rows it already fetches
@@ -150,7 +170,79 @@ switcher + monthly chart. Journal + mark Done + commit & push.
 ---
 
 ## Review
-<!-- Filled by /review-plan. -->
+_3-lens review (correctness, architecture, edge/UX), 2026-09-05. **Two BLOCKERs** (both
+layout/UX) + should-fixes. All folded below._
+
+### Verdict
+**NEEDS CHANGES → RESOLVED → APPROVED.** Two blockers (the scroll/inset composition, and the
+SegmentedControl label-fit) resolved. The core math (bucket formula, `todayBucket`, per-week
+average, `domainMax`, lazy-mounted-sections model, route removal) was verified correct.
+
+### BLOCKER (resolved)
+- **B1 — Scroll/inset composition (a naive "sections keep their `<Screen scroll>`" breaks).** The
+  shared `Screen` ALWAYS adds `insets.top`; a section reusing `<Screen scroll>` under the host's
+  pinned control → double top-inset + nested ScrollView + a control that isn't actually pinned.
+  **Resolution:** the **host owns the frame** — an outer themed `View` with `paddingTop: insets.top
+  + Spacing.three`, the pinned `SegmentedControl`, then a SINGLE `ScrollView` whose
+  `contentContainerStyle` carries the horizontal padding + `maxWidth: MaxContentWidth`/`alignSelf:
+  center` (S4) + `paddingBottom: BottomTabInset + Spacing.four`. **Sections become BARE content**
+  (Fragments/Views with their existing `gap`, NO `Screen`, NO scroll, NO insets); their
+  loading/error/empty gates render INLINE below the control (S2), not as a full-screen `Screen`.
+- **B2 — `SegmentedControl` from `Button` can't keep "Monthly" on one line at large text.** `Button`
+  hardcodes `<Text type="smallBold">` with no `numberOfLines`/`adjustsFontSizeToFit` + 24px
+  horizontal padding; three `flex:1` buttons wrap "Monthly" at OS large-text. **Resolution:** build
+  `segmented-control.tsx` with its OWN pressables (smaller horizontal padding, `numberOfLines={1}` +
+  `adjustsFontSizeToFit`/`minimumFontScale`), selected = primary fill / unselected = secondary. (A
+  dedicated component is now justified — it's not just `Button` reuse.)
+
+### SHOULD-FIX (folded in)
+- **SF1 — The host owns the SHARED plumbing (`useResolvedTz` + `useDailyGoals` + focus-refetch);
+  sections own ONLY their period hook.** Otherwise tz + goals re-resolve/re-fetch on every switch and
+  the profile gate is triplicated. **Resolution:** host resolves tz + goals + the profile
+  loading/error gate (inline, control stays usable) and passes `tz` + `goals` down; each section
+  owns its `useDailyTotals`/`useWeeklyTotals`/`useMonthlyTotals` + that hook's gate + a period
+  focus-refetch.
+- **SF2 — Extract the 4-bucket derivation as a PURE `month-weeks.ts` helper, don't grow the hook.**
+  `useMonthlyTotals` calls `monthWeeks(rows-agg, todayKey, …)` inside its existing `[rows, tz,
+  todayKey]` memo (rows stay private to the hook — right privacy posture). Mirrors the
+  `weekPlanProgress`/`planMetrics` pure-helper grain; keeps it testable without a fetch.
+- **SF3 — `weeks` returned in ALL branches with `index` + `isCurrent` (skeleton), macros 0 when not
+  fresh.** So the loading/error/signed-out UI still renders the 4 bar slots + current-week highlight
+  (mirrors `ZERO_CONSUMED`). Define a `ZERO_WEEKS` skeleton.
+- **SF4 — `CalorieBarChart` bar item needs `hasData` (behavior-preserving).** Today `DayBar` shows
+  the calorie number only when `mealCount>0` (blank, not "0", for an unlogged period). The generic
+  bar `{ key, label, value, isCurrent, hasData }` must blank the top label when `!hasData` (a future
+  monthly bucket must not read "0"). Also add `adjustsFontSizeToFit`/`numberOfLines={1}` to the bar's
+  value label (monthly per-week totals are ~5 digits) (N1).
+- **SF5 — Ship in TWO stages/commits (lower blast radius).** **Stage A:** the structural switcher —
+  host + `SegmentedControl` + extract `DailySection`/`WeeklySection` + `CalorieBarChart` (weekly-only
+  consumer, ZERO visual change) + route/screen removal. **Stage B:** monthly parity — `month-weeks.ts`
+  + `MonthlySection` (4-week bars + per-week average) + `useMonthlyTotals` extension. Each stage:
+  its own `tsc`/`lint`/export + commit.
+
+### NIT (addressed/noted)
+- **Labels are a VIEW concern** — the hook returns `index` (+ raw fields), NOT the "Wk 1" string;
+  the section/chart formats the label (keeps the derivation pure; lets OQ2 change freely). • **Drop
+  `MonthWeek.days`** — unused with a flat `daily×7` goal line + `mealCount>0` average denominator; a
+  leftover from the abandoned per-bucket line. • **Goal line is a SINGLE flat `daily×7`** across all
+  4 bars (Problem/Goal prose corrected — no per-bucket line; bucket 3 may exceed it, accepted). •
+  **Greeting ("Hi, {name}")** — the host owns the profile (via `useResolvedTz`), so render the
+  greeting at the host top (above/beside the control); don't lose it. • **State persistence** —
+  `useState('daily')` = Daily on COLD START, remembered across in-app tab switches (matches "on app
+  entry"); reword Done to "Daily on cold start" (no focus-reset). • **Spinner flash per switch** —
+  lazy-mount refetches on each switch (accepted; do NOT keep all three mounted — that defeats
+  lazy-open + triples the open-time fetch). • **The switcher is a toggle ROW**, not an iOS segmented
+  control (a joined pill would need a shared border; a gapped row of pressables is fine). • Current
+  partial bucket reads "under" the flat line (inherent to bars; optional "in progress" cue, no
+  action).
+
+### Confirmed correct (no change)
+Bucket formula `min(floor((DD−1)/7),3)` (1→0,7→0,8→1,21→2,22→3,31→3) + `todayBucket`; lazy-mounted
+sections respect rules-of-hooks; per-week average `sum ÷ (mealCount>0 buckets)` NaN-safe; `domainMax`
+headroom mirrors weekly; extending the `[rows,tz,todayKey]` memo stays compiler-safe + keeps the
+`(userId,reloadKey)` gate + `userId==null` zeroing; the `mounted`/`active` in-flight guards live in
+the hooks so moving callers into sections is safe; route removal has no dangling refs (only the 3
+`router.push` + 3 re-exports + 3 `Stack.Screen` lines); no migration/new-dep/new-query.
 
 ## Execution log
 <!-- Filled during execution. -->
