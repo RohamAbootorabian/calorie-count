@@ -1544,3 +1544,35 @@ flat daily×7 goal line, kept the greeting, Daily on cold start.
 **Verified.** tsc 0; expo lint 0; full expo export (web) 0 (both stages); no console in month-weeks;
 no dangling route refs. User verify pending (switcher opens on Daily; in-place switch; monthly bars
 + per-week average).
+
+---
+
+## 2026-09-06 — Plan 0028 executed: manual meal date (set/edit eaten_at) (rebuild + verify pending)
+
+**What.** The user can set a meal's date (native calendar picker) in the capture review card + in
+History → edit; defaults to today; today-or-past only. `eaten_at` is now owner-settable (was
+now()-defaulted + immutable).
+
+**Why.** Backdating a meal to the day it was actually eaten.
+
+**How.** Migration extends both RPCs' allowlists (create `coalesce(...,now())`, update
+`coalesce(...,eaten_at)`) with a loose server guard (reject `> now()+1 day` or `±infinity` → 23514);
+the strict "not after today local" check is client-side (no tz passed to the RPC); the `<= todayKey`
+bucket guards (0025/0027) are the safety net. New native dep
+`@react-native-community/datetimepicker` (→ dev-build rebuild). A platform-split `shared/ui/DateField`
+(native calendar / web text fallback) keeps the web export bundling without importing the native
+module. `MealForm.eatenAt: Date` threads through both seeders + toSavePayload (ISO) + validateEatenAt
++ the shared MealEditorForm (onDateChange, both callers) + use-meal-detail; save/update-meal map
+22007/22008 → invalid.
+
+**Review (4-lens) — 2 blockers resolved.** Both in the web fallback: B1 `new Date('YYYY-MM-DD')` is
+UTC-midnight (off-by-one west of UTC) → parse parts to noon-local; B2 `toISOString()` on an Invalid
+Date crashes Save → web never emits an invalid Date + validateEatenAt rejects NaN (wired into
+isFormValid). SFs folded: store noon-of-day on pick (both variants); validateEatenAt/maximumDate
+device-local (not UTC slice); DateField in shared/ui; 22007/22008 → invalid; reject non-finite
+server-side; update all four stale immutability comments. Confirmed: coalesce forms, allowlist/
+no-injection/owner-scoping, all 3 bucketing paths, History orders by eaten_at, no signature break.
+
+**Verified.** tsc 0; expo lint 0; full expo export (web) 0 with the native module NOT in the web
+bundle (platform-split) + the web fallback present; grep gate clean. Migration applied to prod.
+**Pending:** dev-build rebuild (native dep) + user device-verify.

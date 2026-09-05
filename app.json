@@ -46,7 +46,8 @@
           "photosPermission": "Calorie Counter needs access to your photos so you can add a meal picture.",
           "cameraPermission": "Calorie Counter needs camera access so you can snap a meal."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,

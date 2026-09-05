@@ -73,6 +73,10 @@ export type MealForm = {
   assumptions?: string[];
   /** Optional user note (plan 0020) — user input, not AI output; editable + saved. */
   note: string;
+  /** The meal's date (plan 0028). A `Date` (not a string): the native picker + `maximumDate`
+   *  speak `Date`, and the NOON time component keeps the tz buckets on the intended local day —
+   *  do NOT "simplify" to a bare string (it reintroduces the midnight-UTC off-by-one). */
+  eatenAt: Date;
 };
 
 /** Round to a tidy input string — integers stay integers, else 1 decimal. */
@@ -95,6 +99,7 @@ export function seedFormFromAnalysis(analysis: MealAnalysis, initialNote = ''): 
       : undefined,
     assumptions: analysis.assumptions,
     note: initialNote,
+    eatenAt: new Date(), // a new meal defaults to today (plan 0028).
     items: analysis.items.map((item, i) => ({
       id: String(i),
       name: item.name,
@@ -126,6 +131,7 @@ export type StoredMealLog = {
   quality_factors: string[] | null;
   assumptions: string[] | null;
   note: string | null;
+  eaten_at: string;
 };
 
 export type StoredMealItem = {
@@ -161,6 +167,7 @@ export function seedFormFromMealLog(log: StoredMealLog, items: StoredMealItem[])
         : undefined,
     assumptions: log.assumptions ?? undefined,
     note: log.note ?? '',
+    eatenAt: new Date(log.eaten_at), // seed the stored date for editing (plan 0028).
     items: items.map((item, i) => ({
       id: String(i),
       name: item.name,
@@ -221,6 +228,21 @@ export function validateNote(raw: string): string | undefined {
   return undefined;
 }
 
+/**
+ * The meal date must be a real date, today or earlier — compared in the DEVICE-LOCAL
+ * zone (via `get*` accessors, NOT `toISOString().slice`, which is UTC and would trip the
+ * cross-midnight off-by-one, plan 0028 SF2). Rejecting a NaN date also guards
+ * `toSavePayload`'s `toISOString()` from throwing on an Invalid Date (SF/B2).
+ */
+export function validateEatenAt(d: Date): string | undefined {
+  if (Number.isNaN(d.getTime())) return 'Enter a valid date.';
+  const today = new Date();
+  const dKey = d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate();
+  const tKey = today.getFullYear() * 10000 + today.getMonth() * 100 + today.getDate();
+  if (dKey > tKey) return "The date can't be in the future.";
+  return undefined;
+}
+
 /** Per-item field errors; an empty object means the item is valid. */
 export type ItemErrors = Partial<Record<'name' | 'calories' | 'protein' | 'carbs' | 'fat', string>>;
 
@@ -243,6 +265,7 @@ export function validateItem(item: MealItemForm): ItemErrors {
 export function isFormValid(form: MealForm): boolean {
   if (validateDishName(form.dishName)) return false;
   if (validateNote(form.note)) return false;
+  if (validateEatenAt(form.eatenAt)) return false;
   if (form.items.length === 0) return false;
   return form.items.every((item) => Object.keys(validateItem(item)).length === 0);
 }
@@ -291,6 +314,7 @@ export type SaveLogPayload = {
   quality_factors: string[] | null;
   assumptions: string[] | null;
   note: string | null;
+  eaten_at: string;
   total_calories: number;
   total_protein: number;
   total_carbs: number;
@@ -350,6 +374,7 @@ export function toSavePayload(form: MealForm, imagePath: string | null): SavePay
       quality_factors: form.quality ? form.quality.factors : null,
       assumptions: form.assumptions ?? null,
       note: form.note.trim() || null,
+      eaten_at: form.eatenAt.toISOString(), // safe: isFormValid → validateEatenAt rejects NaN first.
       total_calories: totals.calories,
       total_protein: totals.protein,
       total_carbs: totals.carbs,

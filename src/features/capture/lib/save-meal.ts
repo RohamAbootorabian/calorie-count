@@ -40,6 +40,8 @@ function classifyCode(code: string | undefined): SaveErrorKind {
     case '23514': // check_violation — bad bounds / item count / image_path namespace.
     case '23502': // not_null_violation — a required column was null.
     case '22P02': // invalid_text_representation — a bad numeric/uuid cast.
+    case '22007': // invalid_datetime_format — a malformed eaten_at cast (plan 0028).
+    case '22008': // datetime_field_overflow — an out-of-range eaten_at cast (plan 0028).
       return 'invalid';
     case '28000': // our explicit "not authenticated" raise.
     case '42501': // insufficient_privilege — RLS rejected the write.

@@ -100,6 +100,10 @@ export function MealReview({
     setForm((prev) => ({ ...prev, note: value }));
   }
 
+  function setEatenAt(value: Date) {
+    setForm((prev) => ({ ...prev, eatenAt: value }));
+  }
+
   function setItemField(id: string, field: keyof MealItemForm, value: string) {
     setForm((prev) => ({
       ...prev,
@@ -163,6 +167,7 @@ export function MealReview({
         onItemChange={setItemField}
         onRemoveItem={removeItem}
         onNoteChange={setNote}
+        onDateChange={setEatenAt}
         totals={totals}
         withinCaps={withinCaps}
       />

@@ -5,8 +5,10 @@
  * this logic is testable without a fetch (mirrors `weekPlanProgress`/`planMetrics`).
  *
  * "This month" = rows whose tz-date `startsWith` the current `YYYY-MM` and are `<=
- * todayKey` (all logged rows are ≤ today anyway — `eaten_at` is `now()`-defaulted +
- * immutable). PRIVACY: pure, no I/O, never logs a row/metric/tz.
+ * todayKey`. `eaten_at` is `now()`-defaulted but OWNER-SETTABLE to a past date (plan 0028;
+ * client-strict past-only, server loosely bounds future to now()+1d) — so the `<= todayKey`
+ * guard is the real safety net that excludes any stray future/edge row. PRIVACY: pure, no
+ * I/O, never logs a row/metric/tz.
  */
 import { makeDayFormatter } from './day-formatter';
 import type { ConsumedMacros } from './plan-progress';

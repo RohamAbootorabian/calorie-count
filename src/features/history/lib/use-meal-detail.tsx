@@ -32,7 +32,8 @@ import { supabase } from '@/lib/supabase';
 import type { StoredMealItem, StoredMealLog } from '@/features/capture/lib/meal-form';
 
 /** The editable + carried parent fields (NOT totals — recomputed on save). */
-const LOG_COLUMNS = 'dish_name, confidence, quality_score, quality_factors, assumptions, note';
+const LOG_COLUMNS =
+  'dish_name, confidence, quality_score, quality_factors, assumptions, note, eaten_at';
 /** Every per-item field the form seeds (edited + carried). */
 const ITEM_COLUMNS = 'name, portion, estimated_grams, calories, protein, carbs, fat, sugar, fiber, sodium';
 

@@ -13,12 +13,13 @@
 import { StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import { Button, Card, Input, Text } from '@/shared/ui';
+import { Button, Card, DateField, Input, Text } from '@/shared/ui';
 import type { Nutrients } from '@/types/nutrition';
 
 import {
   NOTE_MAX,
   validateDishName,
+  validateEatenAt,
   validateItem,
   validateNote,
   type MealForm,
@@ -32,6 +33,8 @@ export type MealEditorFormProps = {
   onRemoveItem: (id: string) => void;
   /** Controlled note handler (plan 0020) — mirrors `onDishChange`. */
   onNoteChange: (value: string) => void;
+  /** Controlled meal-date handler (plan 0028). */
+  onDateChange: (value: Date) => void;
   totals: Nutrients;
   withinCaps: boolean;
 };
@@ -42,11 +45,13 @@ export function MealEditorForm({
   onItemChange,
   onRemoveItem,
   onNoteChange,
+  onDateChange,
   totals,
   withinCaps,
 }: MealEditorFormProps) {
   const dishError = validateDishName(form.dishName);
   const noteError = validateNote(form.note);
+  const dateError = validateEatenAt(form.eatenAt);
 
   return (
     <View style={styles.body}>
@@ -61,6 +66,14 @@ export function MealEditorForm({
         onChangeText={onDishChange}
         error={dishError}
         autoCapitalize="sentences"
+      />
+
+      <DateField
+        label="Date"
+        value={form.eatenAt}
+        onChange={onDateChange}
+        maximumDate={new Date()}
+        error={dateError}
       />
 
       <Input

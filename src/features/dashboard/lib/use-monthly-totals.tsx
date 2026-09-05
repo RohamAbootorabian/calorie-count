@@ -15,8 +15,10 @@
  * tz-independent → never refetches. (Do NOT shrink it.)
  *
  * "This month" = rows whose tz-date `startsWith` the current `YYYY-MM`. All logged
- * rows are ≤ today because `eaten_at` is `now()`-defaulted (initial_schema) and never
- * user-set (no picker; the update RPC never writes it) — so this is month-to-date. The
+ * rows are ≤ today because `eaten_at` is `now()`-defaulted (initial_schema) and, since
+ * plan 0028, OWNER-SETTABLE only to a PAST date (client-strict; server loosely bounds
+ * future to now()+1d) — the `<= todayKey` guard in `aggregateMonth` excludes any stray
+ * future/edge row — so this is month-to-date. The
  * `<= todayKey` guard is belt-and-suspenders for a future "edit meal time" feature.
  *
  * SECURITY: explicit in-code `.eq('user_id', userId)`. PRIVACY: strict `Pick<>`

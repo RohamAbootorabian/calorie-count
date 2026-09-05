@@ -9,6 +9,9 @@ export type { ButtonProps, ButtonVariant } from './button';
 export { Card } from './card';
 export type { CardProps } from './card';
 
+export { DateField } from './date-field';
+export type { DateFieldProps } from './date-field';
+
 export { Input } from './input';
 export type { InputProps } from './input';
 

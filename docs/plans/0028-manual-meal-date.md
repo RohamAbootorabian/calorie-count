@@ -1,6 +1,6 @@
 # Plan: Manual meal date — set/edit `eaten_at` (defaults to today)
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (dev-build rebuild + user verify pending)
 - **Plan #**: 0028
 - **Created**: 2026-09-05
 
@@ -249,4 +249,33 @@ paths) and out of the fetch windows when older (still in History); idempotent cr
 mirror.
 
 ## Execution log
-<!-- Filled during execution. -->
+_Executed 2026-09-06 — all 2 blockers + should-fixes, no deviations._
+
+**Deployed.** Migration `20260906120000_meal_log_eaten_at.sql` applied via `db push` (both RPCs
+accept `eaten_at`: create `coalesce(...,now())`, update `coalesce(...,eaten_at)`; loose guard rejects
+`> now()+1 day` OR `±infinity` → 23514; RPC header comments updated). `@react-native-community/
+datetimepicker@9.1.0` installed (`expo install` — a config plugin was added → **the dev build must be
+rebuilt**).
+
+**Files.**
+- `shared/ui/date-field.tsx` (native, B1/B2/SF1/SF3) — tappable field → `DateTimePicker` (`mode=date`,
+  `display=inline` on iOS, `maximumDate`); `onChange` emits ONLY `noonLocal(picked)`.
+- `shared/ui/date-field.web.tsx` (web fallback) — text `Input`; strict parts-parse to noon-local
+  (never `new Date(str)`), emits ONLY valid Dates (else inline error). + barrel export.
+- `capture/lib/meal-form.ts` — `eatenAt: Date` on `MealForm`/`SaveLogPayload`(`eaten_at`)/
+  `StoredMealLog`(`eaten_at`); both seeders (create→`new Date()`, edit→`new Date(log.eaten_at)`);
+  `toSavePayload.eaten_at = form.eatenAt.toISOString()`; `validateEatenAt` (NaN + device-local
+  future, SF2) wired into `isFormValid`.
+- `capture/screens/meal-editor-form.tsx` — `<DateField>` row via `onDateChange`; `meal-review.tsx` +
+  `history/screens/edit-meal-screen.tsx` add `setEatenAt` + pass it.
+- `history/lib/use-meal-detail.tsx` — `eaten_at` in the SELECT + `StoredMealLog`.
+- `capture/lib/save-meal.ts` + `history/lib/update-meal.ts` — `22007`/`22008` → `invalid` (SF4).
+- Invariant comments updated: both RPC headers, `use-monthly-totals.tsx`, `month-weeks.ts` (SF6).
+
+**Deviations.** None.
+
+**Verification.** `tsc` 0; `expo lint` 0; full `expo export --platform web` 0 — the native
+datetimepicker is NOT in the web bundle (platform-split works), the web fallback IS. Grep gate: native
+module only in `date-field.tsx`; web never `new Date(str)`; no `console.*` in the new files; History
+orders by `eaten_at desc`. **Pending:** `pod install` + rebuild the dev client (native dep), then
+user device-verify (set a past date in the review card + History edit; today default; future blocked).
