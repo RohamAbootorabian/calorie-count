@@ -1,6 +1,6 @@
 # Plan: Manual meal date — set/edit `eaten_at` (defaults to today)
 
-- **Status**: **Draft** → In Review → Approved → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
 - **Plan #**: 0028
 - **Created**: 2026-09-05
 
@@ -30,16 +30,18 @@ deployed; dev build rebuilt; user verifies on device.
   meal → Edit), not on the compact list row.
 
 ## Proposed approach
-### 1. New native dep + a platform-split `DateField`
+### 1. New native dep + a platform-split `DateField` (in `shared/ui`, SF3)
 `npx expo install @react-native-community/datetimepicker` (a NATIVE module → the dev build must be
-rebuilt — see Rollout). To keep the web export (our verify surface) bundling AND give the device the
-calendar, split by platform file:
-- `date-field.tsx` (native, iOS/Android): a `Pressable` showing the formatted date that opens
-  `DateTimePicker` (`mode="date"`, `maximumDate={today}`); on change → `onChange(date)`.
-- `date-field.web.tsx` (web fallback): a DS `<Input>` (`YYYY-MM-DD`) with the same `value`/`onChange`
-  contract + inline validation. (Metro resolves `.web.tsx` for web, `.tsx` for native, so web never
-  imports the native module.)
-Shared prop contract: `DateField({ value: Date, onChange: (d: Date) => void, maximumDate: Date })`.
+rebuilt — see Rollout). Platform-split files in **`src/shared/ui/`** (+ barrel export) so web never
+imports the native module (Metro resolves `.web.tsx` for web, `.tsx` for native):
+- `date-field.tsx` (native): a `Pressable` showing the formatted date that opens `DateTimePicker`
+  (`mode="date"`, `maximumDate={today}`); on change → `onChange(noon)` where **noon =
+  `new Date(y, m-1, d, 12, 0, 0)` of the picked day** (SF1 — normalize the picker's result).
+- `date-field.web.tsx` (web fallback): a DS `<Input>` (`YYYY-MM-DD`). On a VALID `YYYY-MM-DD`, emit
+  `new Date(y, m-1, d, 12)` (noon-local, parsed from PARTS — **never `new Date(str)`**, B1); on an
+  invalid/partial value, do NOT call `onChange` (keep the last valid value + show inline error, B2).
+Shared contract: `DateField({ value: Date, onChange: (d: Date) => void, maximumDate: Date })` —
+`onChange` ONLY ever emits a valid noon-local Date.
 
 ### 2. `MealForm` gains `eatenAt: Date`
 `meal-form.ts`:
@@ -47,9 +49,12 @@ Shared prop contract: `DateField({ value: Date, onChange: (d: Date) => void, max
 - `seedFormFromAnalysis(analysis, initialNote)` → `eatenAt: new Date()` (today; a new meal).
 - `seedFormFromMealLog(log, items)` → `eatenAt: new Date(log.eaten_at)` (the stored instant).
 - `toSavePayload` → `eaten_at: form.eatenAt.toISOString()`.
-- `validateEatenAt(d: Date)` → error if the **local date** is after today's local date (compare
-  `YYYY-MM-DD` of each — NOT the raw timestamp, so "today at any time" is always valid); wire into
-  `isFormValid`. Near-dead behind the picker's `maximumDate`, kept as defense-in-depth.
+- `validateEatenAt(d: Date)` → error if `Number.isNaN(d.getTime())` (B2) OR the **device-local date**
+  is after today's local date. Compare via `getFullYear/getMonth/getDate` (NOT `toISOString().slice`
+  — that's UTC and reintroduces the cross-midnight off-by-one, SF2); "today at any time" stays valid.
+  Wire into `isFormValid` (so a bad/future date blocks Save before the `toISOString()` throw).
+  `eatenAt: Date` (the one non-string form field) is intentional — the picker + `maximumDate` speak
+  `Date`, and the noon time component dodges the midnight-UTC bucket bug; don't "simplify" to a string.
 
 ### 3. Shared editable form — the date row
 `meal-editor-form.tsx` (shared by review + edit): add the `<DateField>` bound to `form.eatenAt` via a
@@ -65,26 +70,34 @@ form seeds the stored date.
 New migration `<ts>_meal_log_eaten_at.sql` (`create or replace` both RPCs; the only new line each is
 the `eaten_at` column/value):
 - **`create_meal_log`**: add `eaten_at` to the allowlisted insert; value =
-  `coalesce((p_log->>'eaten_at')::timestamptz, now())` (omitted → today's `now()`, unchanged
-  behavior). Add a LOOSE future guard: `if provided and (p_log->>'eaten_at')::timestamptz > now() +
-  interval '1 day' then raise … 23514` (the strict "not after today local" check is client-side; the
-  server bound just rejects absurd far-future values without needing the tz).
+  `coalesce((p_log->>'eaten_at')::timestamptz, now())` (omitted → today's `now()`, unchanged).
 - **`update_meal_log`**: add `eaten_at = coalesce((p_log->>'eaten_at')::timestamptz, eaten_at)` to
-  the allowlisted `SET` (was explicitly never touched); same loose future guard.
-- Update both RPC header comments (`eaten_at` is no longer immutable; it's an owner-settable date,
-  loose-future-guarded).
+  the allowlisted `SET` (was explicitly never touched).
+- **Loose server guard (both):** when provided, reject a far-future OR non-finite value —
+  `if v_eaten > now() + interval '1 day' or v_eaten in ('infinity','-infinity') then raise
+  'eaten_at out of range' using errcode = '23514'` (SF5 — value-free message; the strict "not after
+  today local" check is client-side; no tz passed to the RPC). The generic `23514`→client-`invalid`
+  copy ("check your edits") is acceptable for the crafted-caller/wrong-clock path the UI already
+  blocks.
+- **Client errcode mapping (SF4):** add `22007` + `22008` (malformed/overflow timestamp cast)
+  alongside `22P02` in the `invalid` branch of `save-meal.ts` + `update-meal.ts`'s `classifyCode`.
+- Update BOTH RPC header comments (create "keeps column defaults" + **update "NEVER touched: …
+  eaten_at … immutable"**) — `eaten_at` is now owner-settable to a past date (SF6).
 - `database.ts` already has `eaten_at` on `meal_logs` Row/Insert/Update — no regen needed.
 
-### 6. Note the invariant change
-`eaten_at` becomes user-settable (past-only). The `<= todayKey` guards added in 0025/0027
-(`use-monthly-totals`/`month-weeks`) and the daily/weekly exact-date buckets already tolerate this;
-add a one-line note where those comments assert "eaten_at is now()-defaulted + immutable" so they
-stay truthful (now: "+ owner-settable to a past date; never future").
+### 6. Note the invariant change (all FOUR stale comments, SF6)
+`eaten_at` becomes owner-settable (client-strict past-only; server loosely bounds future to
+now()+1d; the `<= todayKey` bucket guards are the real safety net that excludes any stray
+future/edge row). Update the four comments that assert immutability: the **create RPC header**, the
+**`update_meal_log.sql` header** ("NEVER touched: … eaten_at … immutable"), **`use-monthly-totals.tsx`**,
+and **`month-weeks.ts`**. `created_at` stays the immutable audit timestamp (only `eaten_at` moves).
 
 ## Files to change
 - `package.json` (+ `ios/`/pods) — add `@react-native-community/datetimepicker` (native dep).
-- `src/features/capture/screens/date-field.tsx` + `date-field.web.tsx` — **new.** The picker + web
-  fallback.
+- `src/shared/ui/date-field.tsx` + `date-field.web.tsx` (+ `src/shared/ui/index.ts` export) —
+  **new (SF3).** Native picker + web fallback; `onChange` emits ONLY a valid noon-local Date.
+- `src/features/capture/lib/save-meal.ts` + `src/features/history/lib/update-meal.ts` — map
+  `22007`/`22008` → `invalid` (SF4).
 - `src/features/capture/lib/meal-form.ts` — `eatenAt` in `MealForm`/`SaveLogPayload`/`StoredMealLog`;
   both seeders; `toSavePayload`; `validateEatenAt` + `isFormValid`.
 - `src/features/capture/screens/meal-editor-form.tsx` — the `DateField` row via `onDateChange`.
@@ -134,7 +147,9 @@ unchanged (owner-scoped). `db push` required. New NATIVE dependency → dev-buil
   4. Future date is not selectable / blocked.
   5. Empty/no-date path unchanged (defaults to today).
 - **Grep gate:** the date value isn't logged; no `select('*')`; the native module is imported ONLY in
-  `date-field.tsx` (never the `.web.tsx`).
+  `date-field.tsx` (never the `.web.tsx`); History + dashboard queries `order by`/bucket on
+  `eaten_at` (confirmed `useMealHistory` uses `eaten_at desc`); the web fallback never calls
+  `new Date(str)` (parts-only, noon-local).
 
 ## Rollout
 1. Migration first (`db push`) — the write target must accept `eaten_at`.
@@ -157,7 +172,81 @@ unchanged (owner-scoped). `db push` required. New NATIVE dependency → dev-buil
 ---
 
 ## Review
-<!-- Filled by /review-plan. -->
+_4-lens review (correctness, architecture, edge, data/privacy), 2026-09-05. **Two BLOCKERs** (both
+the web `DateField`'s Date handling) + should-fixes. All folded below._
+
+### Verdict
+**NEEDS CHANGES → RESOLVED → APPROVED.** The DB logic (both `coalesce` forms, `::timestamptz`
+parsing, owner-scoping, idempotency, no injection, server fields untouched), all three bucketing
+paths, `seedFormFromAnalysis` (no signature break), and History ordering (`order by eaten_at desc`,
+confirmed) are correct. Two blockers in the not-yet-written `date-field.web.tsx` (UTC-parse off-by-one
++ Invalid-Date crash) + a cluster of local-vs-UTC / noon-anchoring / errcode should-fixes, all folded.
+
+### BLOCKER (resolved)
+- **B1 — Web fallback `new Date('YYYY-MM-DD')` = UTC midnight → off-by-one local day.** West of UTC,
+  that instant formats to the PREVIOUS day in the bucket formatter → the meal lands on the wrong day
+  (and web is our verify surface). **Resolution:** the web field parses PARTS to noon-local —
+  `const [y,m,d] = s.split('-').map(Number); new Date(y, m-1, d, 12)` — NEVER `new Date(str)`.
+- **B2 — `toISOString()` on an Invalid Date crashes Save.** `toSavePayload` calls
+  `form.eatenAt.toISOString()`, which throws `RangeError` on an Invalid Date; the web text field can
+  hold a half-typed/garbage value. **Resolution:** the web `DateField` NEVER emits an invalid Date
+  via `onChange` (parse+validate first; keep the last-valid value + show an inline error otherwise),
+  AND `validateEatenAt` returns an error when `Number.isNaN(d.getTime())` and is wired into
+  `isFormValid` (so a bad date blocks Save before the throw).
+
+### SHOULD-FIX (folded in)
+- **SF1 — Store NOON-of-day when the user picks a day (both variants).** Midnight can not-exist under
+  a midnight-DST zone and any device-vs-profile tz offset can push it across the day boundary. The
+  weekly hook already seeds at noon for this reason. **Resolution:** `DateField.onChange` ALWAYS emits
+  `new Date(y, m-1, d, 12, 0, 0)` (noon-local of the chosen day) — native (normalize the picker's
+  result) AND web. Create default (unpicked) = `new Date()` (now) is fine.
+- **SF2 — `validateEatenAt` (and `maximumDate`) compare in DEVICE-LOCAL, not UTC.** Use
+  `getFullYear/getMonth/getDate` (or an `en-CA` local formatter), NEVER `toISOString().slice(0,10)`
+  (which would reintroduce the cross-midnight off-by-one). Reject future AND `NaN(getTime())`.
+- **SF3 — Move `DateField` to `src/shared/ui/` (+ barrel export).** It's a generic, DS-level,
+  platform-split primitive consumed cross-feature (capture + history); it has zero meal semantics —
+  `shared/ui` (which already holds `Input`, wrapped by the web fallback) is its home, not
+  `capture/screens/`.
+- **SF4 — Map `22007`/`22008` (malformed/overflow timestamp) → `invalid` in BOTH `save-meal.ts` +
+  `update-meal.ts`.** A crafted bad `eaten_at` casts to `22007`/`22008` (not `22P02`), which currently
+  falls through to raw `unknown` — inconsistent with the typed-never-raw posture at the RPC boundary.
+- **SF5 — Reject non-finite `eaten_at` in the server guard.** `'+infinity'` is caught by `> now()+1
+  day` but `'-infinity'` passes; add `or (p_log->>'eaten_at')::timestamptz not in ('infinity','-infinity')`
+  (or an `isfinite`-style check) → `23514`, so the bounded-date invariant holds at the boundary.
+  Keep the raise messages VALUE-FREE (health-adjacent PII).
+- **SF6 — Update ALL FOUR stale invariant comments** (create RPC header, **`update_meal_log.sql`
+  header** — §6 originally omitted it, `use-monthly-totals.tsx`, `month-weeks.ts`): `eaten_at` is now
+  owner-settable to a PAST date (client-strict past-only; server loosely bounds future to now()+1d;
+  the `<= todayKey` bucket guards exclude any stray future/edge row). Reword §6 so the invariant note
+  is truthful at the DB layer (server is loose, buckets are the real safety net).
+
+### NIT (addressed/noted)
+- **Verify History/dashboard ORDER BY `eaten_at`** (not `created_at`) — confirmed: `useMealHistory`
+  uses `.order('eaten_at', {ascending:false})`; keep as a grep/verify line. • **Document `eatenAt:
+  Date`** (the one non-string form field): the native picker + `maximumDate` speak `Date`, and keeping
+  a time component (noon) is what dodges the midnight-UTC bucket bug — note it so a future reader
+  doesn't "simplify" to a bare string. • **device-tz vs. profile-tz divergence** — noon-of-day
+  storage (SF1) absorbs offsets up to ±12 h; post-0022 both are the device zone anyway; one-line
+  comment. • **`maximumDate` staleness across midnight** — minor; `validateEatenAt` uses a fresh
+  `new Date()`; accept or recompute from the live day key. • **No `minimumDate`** — harmless
+  (timestamptz + buckets tolerate old dates); optional floor, skipped. • **Future-guard `23514`
+  shares the SQLSTATE with the totals/item-count checks** → the client shows the generic `invalid`
+  copy ("We couldn't save… check your edits"), which is acceptable for a date too (NOT the "totals
+  too large" copy, which lives elsewhere); the UI (`maximumDate` + `validateEatenAt`) blocks future
+  before the RPC, so this path is crafted-caller/wrong-clock only — accepted, no new SQLSTATE. •
+  Optionally use `<input type="date">` for the web fallback (a real calendar on the verify surface) —
+  optional.
+
+### Confirmed correct (no change)
+`coalesce(...,now())` (create) / `coalesce(...,eaten_at)` (update) preserve omitted-→-unchanged;
+`toISOString()` (Z) parses exactly as `timestamptz`; allowlist stays explicit `->>`+cast (no
+injection, no `jsonb_populate_record`); update stays owner-scoped (`id=p_id AND user_id=v_uid`,
+raised before child mutation); `verified`/`user_id`/`image_path`/`created_at` untouched;
+`set_updated_at` still fires; backdated meals bucket on their day + drop out of "today" (all three
+paths) and out of the fetch windows when older (still in History); idempotent create keeps the first
+`eaten_at`; the loose `> now()+1day` guard can't false-reject a legit "today" instant at any tz;
+`database.ts` already carries `eaten_at` (no regen); the 0020 `note` threading seam is the right
+mirror.
 
 ## Execution log
 <!-- Filled during execution. -->
