@@ -1,6 +1,6 @@
 # Plan: Split into Daily / Weekly / Monthly sections — three buttons on the dashboard
 
-- **Status**: **Draft** → In Review → Approved → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
 - **Plan #**: 0026
 - **Created**: 2026-09-05
 
@@ -33,12 +33,21 @@ user verifies. Pure client — no migration, no new dependency, no new data logi
   as a standalone screen (the user accepted this overlap).
 
 ## Proposed approach
+### 0. Extract `useResolvedTz()` (SF3) — shared tz/profile plumbing
+New `src/features/dashboard/lib/use-resolved-tz.ts`: `useResolvedTz()` = `useProfile()` +
+`resolveTimezone(profile?.timezone)`, returning `{ tz, profileLoading, profileError, refetchProfile }`.
+Used by all FOUR screens (Home, `/daily`, `/monthly`, `/trends`) for the tz + the profile
+loading/error gate. Each screen KEEPS its own data hook(s) + focus-refetch (those differ). Scope
+to the tz/profile slice only.
+
 ### 1. Extract the daily summary into a shared component
 Move the dashboard's daily rendering — the **calories card + macros card**, plus the file-local
-`Bar`, `MetricBar`, `progressFor`, `Progress` type, `round` — into a shared
-`src/features/dashboard/screens/daily-summary.tsx` as `DailySummary({ totals, goals })` (pure
-presentational; `progressFor` keeps using the shared `guardedRatio`). `dashboard-screen.tsx` renders
-`<DailySummary totals={totals} goals={goals} />` in place of the inline cards (no visual change).
+`Bar`, `MetricBar`, `progressFor`, `Progress` type, `round`, **AND their styles** (`calCard`,
+`macroCard`, `metric`, `metricTop`, `track`, `trackLg`, `fill`) **+ the `guardedRatio` import + the
+`DimensionValue` import** (SF1) — into `src/features/dashboard/screens/daily-summary.tsx` as
+`DailySummary({ totals, goals })` (pure presentational). DELETE all of the above from
+`dashboard-screen.tsx`. `dashboard-screen.tsx` renders `<DailySummary totals={totals} goals={goals}
+/>` in place of the inline cards (no visual change) and prunes its now-dead imports (SF2).
 
 ### 2. New Daily screen (`/daily`)
 `daily-summary-screen.tsx`: owns the data plumbing (mirrors `dashboard-screen`: single `useProfile`
@@ -47,22 +56,25 @@ and renders `<DailySummary />` + the "No meals logged today" note. A `<Screen sc
 back-chevron header (route-level).
 
 ### 3. New Monthly screen (`/monthly`)
-`monthly-screen.tsx`: owns `useProfile` → `resolveTimezone` → `useMonthlyTotals(tz)` + `useDailyGoals`
-+ refetch-on-focus + the profile loading/error gates, and renders the monthly `PlanRingsCard`
-(extracted in 0025) with its own loading/error/empty/no-goal gates — the exact card the weekly
-screen shows today, now standalone.
+`monthly-screen.tsx`: uses `useResolvedTz()` + `useMonthlyTotals(tz)` + `useDailyGoals` +
+refetch-on-focus + the profile loading/error gates, and renders — in a **`<Screen scroll>`** (SF6) —
+the monthly `PlanRingsCard` (extracted in 0025) with its own loading/error/empty/no-goal gates
+(`loading={monthlyLoading || goalsLoading}`, `error`, `goalsMissing`, `emptyNote`) — the exact card
+the weekly screen shows today, now standalone.
 
 ### 4. Weekly screen (`/trends`) — remove the monthly card
-`trend-screen.tsx`: drop `useMonthlyTotals` + the monthly `PlanRingsCard` + the `planMetrics`
-monthly call + `refetchMonthly`. With monthly gone, revert to the simpler weekly structure: the
-profile/loading/error gates + the all-7-empty full-screen empty state (the 0025 B1 restructure — an
-inline empty + unconditional monthly card — existed ONLY to keep monthly visible; no longer needed),
-then bars + the weekly `PlanRingsCard` + the weekly average.
+`trend-screen.tsx`: drop `useMonthlyTotals` + the monthly `PlanRingsCard` + the `planMetrics` call +
+`refetchMonthly` (and its `useFocusEffect` dep-array entry) + `monthMetrics` (SF2 — prune all
+leftovers). With monthly gone, revert to weekly-only: profile/loading/error gates + the all-7-empty
+**full-screen CENTERED early-return** (SF5 — re-author the original centered empty, NOT the 0025
+inline card), then bars + the weekly `PlanRingsCard` + the weekly average. (The 0025 B1 inline-empty
+existed only to keep monthly visible below — safe to drop now.)
 
 ### 5. Dashboard — three buttons
-`dashboard-screen.tsx`: replace the single "Weekly trend →" `Button` with a row of three
-`variant="secondary"` buttons — **Daily · Weekly · Monthly** — in a `flexDirection:'row'` container
-(`gap`, each `flex:1`), navigating to `/daily`, `/trends`, `/monthly` respectively.
+`dashboard-screen.tsx`: replace the single "Weekly trend →" `Button` with a `flexDirection:'row'`
+container (`gap`) of three `<Button variant="secondary" style={{ flex: 1 }}>` — **Daily · Weekly ·
+Monthly** — navigating to `/daily`, `/trends`, `/monthly`. **Use `style={{flex:1}}`, NOT `fullWidth`**
+(SF4 — `fullWidth` stretches the cross axis in a row).
 
 ### 6. Routes
 - `src/app/daily.tsx` + `src/app/monthly.tsx` — thin re-exports (mirror `trends.tsx`).
@@ -71,18 +83,25 @@ then bars + the weekly `PlanRingsCard` + the weekly average.
   `trends` = "Weekly Trend").
 
 ## Files to change
+- `src/features/dashboard/lib/use-resolved-tz.ts` — **new (SF3).** `useResolvedTz()` → `{ tz,
+  profileLoading, profileError, refetchProfile }`.
 - `src/features/dashboard/screens/daily-summary.tsx` — **new.** `DailySummary({ totals, goals })` +
-  the moved `Bar`/`MetricBar`/`progressFor`/`round`.
-- `src/features/dashboard/screens/daily-summary-screen.tsx` — **new.** The `/daily` screen (data
-  plumbing + `<DailySummary/>` + no-meals note + gates).
-- `src/features/dashboard/screens/monthly-screen.tsx` — **new.** The `/monthly` screen (monthly
-  `PlanRingsCard` + plumbing + gates).
-- `src/features/dashboard/screens/trend-screen.tsx` — remove the monthly card + its hook/imports;
-  revert to weekly-only structure.
-- `src/features/dashboard/screens/dashboard-screen.tsx` — use `<DailySummary/>`; replace the single
-  button with the Daily/Weekly/Monthly row.
+  the moved `Bar`/`MetricBar`/`progressFor`/`Progress` type/`round` + their styles (`calCard`,
+  `macroCard`, `metric`, `metricTop`, `track`, `trackLg`, `fill`) + `guardedRatio`/`DimensionValue`
+  imports (SF1).
+- `src/features/dashboard/screens/daily-summary-screen.tsx` — **new.** The `/daily` screen
+  (`useResolvedTz` + `useDailyTotals` + `useDailyGoals` + focus-refetch + gates + `<DailySummary/>` +
+  no-meals note, in a `<Screen scroll>`).
+- `src/features/dashboard/screens/monthly-screen.tsx` — **new.** The `/monthly` screen (`useResolvedTz`
+  + `useMonthlyTotals` + `useDailyGoals` + focus-refetch + gates + monthly `PlanRingsCard`, in a
+  `<Screen scroll>`).
+- `src/features/dashboard/screens/trend-screen.tsx` — remove the monthly card + prune all leftovers
+  (SF2); full-screen empty revert (SF5); adopt `useResolvedTz`.
+- `src/features/dashboard/screens/dashboard-screen.tsx` — use `<DailySummary/>` + `useResolvedTz`;
+  replace the single button with the 3-button row (`flex:1`, SF4); prune dead imports (SF2).
 - `src/app/daily.tsx`, `src/app/monthly.tsx` — **new** thin re-exports.
-- `src/app/_layout.tsx` — register the two new routes (guarded, headerShown, titles).
+- `src/app/_layout.tsx` — register `daily` + `monthly` (guarded, headerShown, titles "Daily Summary"
+  / "Monthly Review").
 
 ## Data model / schema impact
 **None.** Pure client — reuses existing hooks/components; no migration, no new fetch shape (the
@@ -133,7 +152,64 @@ three buttons + screens. Journal + mark Done + commit & push.
 ---
 
 ## Review
-<!-- Filled by /review-plan. -->
+_3-lens review (correctness, architecture, edge/UX; data/privacy skipped — pure UI/routing
+restructure, no new query/schema), 2026-09-05. **No BLOCKERs.** Should-fixes folded below._
+
+### Verdict
+**APPROVED.** Zero blockers. The routing pattern (thin re-export + guarded `_layout` sibling) is
+confirmed identical to `/trends`/`/meal-edit`; the DS `Button` CAN render 3-in-a-row via
+`style={{flex:1}}` (min touch target 48 satisfied); reverting `trend-screen` to weekly-only does NOT
+reintroduce the 0025 B1 bug (that restructure existed only to keep monthly visible — moot once
+monthly moves out); each new screen owning its `useProfile→resolveTimezone→hooks` plumbing works for
+deep-links; `progressFor`/`guardedRatio` guard divide-by-zero; hook order is compiler-safe if it
+mirrors the existing screens.
+
+### SHOULD-FIX (folded in)
+- **SF1 — Move the STYLES + `guardedRatio` import + `Progress` type WITH `DailySummary`
+  (correctness + architecture).** `Bar`/`MetricBar` depend on `calCard`, `macroCard`, `metric`,
+  `metricTop`, `track`, `trackLg`, `fill` (+ the `DimensionValue` import); `progressFor` needs the
+  `guardedRatio` import + the `Progress` type. **Resolution:** all of these move into
+  `daily-summary.tsx` and are DELETED from `dashboard-screen.tsx` (which keeps only
+  `flex`/`centered`/`content`/`header`/`empty` + its own imports). Keep `goals!.calories`
+  (guarded by `cal.hasGoal`).
+- **SF2 — Prune now-dead imports on both edited files (lint-clean bar).** After extraction,
+  `dashboard-screen.tsx` drops `Card`(if unused)/`DimensionValue`/`guardedRatio`; after the monthly
+  removal, `trend-screen.tsx` drops `useMonthlyTotals`/`planMetrics` (+ `monthMetrics`,
+  `refetchMonthly`, and its entry in the `useFocusEffect` dep array). Grep-verify none remain.
+- **SF3 — Extract `useResolvedTz()` — 4 near-identical tz/profile copies (architecture).**
+  Home + `/daily` + `/monthly` + `/trends` all re-derive `resolveTimezone(useProfile().timezone)` +
+  the profile loading/error branch. **Resolution:** a tiny `dashboard/lib/use-resolved-tz.ts`
+  returning `{ tz, profileLoading, profileError, refetchProfile }` (just `useProfile` +
+  `resolveTimezone` passthrough), used by all four screens; each KEEPS its own data hook(s) +
+  focus-refetch (those differ). Scope to the tz/profile slice ONLY — do NOT extract a full plumbing
+  hook or a shared screen scaffold (gate order / empty copy / hook sets differ = over-engineering).
+- **SF4 — The 3-button row uses `style={{ flex: 1 }}`, NOT `fullWidth` (edge/UX).** `fullWidth` is
+  `alignSelf:'stretch'` (cross-axis in a row → wrong; distorts height, no equal columns). The row is
+  a `flexDirection:'row'` container with `gap` and each `<Button variant="secondary" style={{flex:1}}>`.
+- **SF5 — Weekly revert = a full-screen CENTERED empty early-return, not the 0025 inline card.** The
+  inline empty (`summaryCard` in the scroll) existed only so monthly could sit below it. **Resolution:**
+  re-author the all-7-empty branch as the original centered full-screen `return` (mirroring
+  `ErrorState`/`Centered`), so an empty week isn't a lone small card floating atop a scroll view.
+- **SF6 — `/monthly` uses `<Screen scroll>` (edge/UX).** 4 rings + subtext can exceed the viewport at
+  large text; match `trend-screen`'s `<Screen scroll>` (route is `headerShown:true`; `Screen` handles
+  insetTop — no double-inset).
+
+### NIT (noted)
+- `/daily` genuinely duplicates Home's inline daily cards — the user chose it (OQ1); the shared
+  `DailySummary` makes the overlap cheap. Kept. • Goals-*error* renders as "Set your goals" on both
+  `/daily` and `/monthly` (a null-vs-error conflation) — PRE-EXISTING (dashboard + the weekly card do
+  the same); inherited, not fixed here. • Button labels have no `numberOfLines`; keep them short
+  ("Daily"/"Weekly"/"Monthly") so they don't wrap at large text — acceptable. • Each screen
+  instantiates its own `useDailyGoals`/totals hooks (no singleton assumption — confirmed safe;
+  Home and `/daily` render identically from independent, owner-scoped data). • Double-tap is guarded
+  by `Button`'s 600 ms in-flight ref; theme-correct via `variant="secondary"` tokens; midnight/month
+  rollover preserved per section.
+
+### Confirmed correct (no change)
+Thin re-export routes + guarded `_layout` registration; `/trends` kept (no breaking rename);
+`DailySummary` as a pure presentational feature-local component (mirrors `metric-ring.tsx`); the
+monthly screen replicating `trend-screen`'s card gating verbatim (`loading={monthlyLoading ||
+goalsLoading}`, `error`, `goalsMissing`, `emptyNote`); no new data/query/schema.
 
 ## Execution log
 <!-- Filled during execution. -->
