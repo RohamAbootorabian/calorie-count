@@ -128,12 +128,19 @@ function MetricRing({
 }
 
 /**
- * Pure-`View` donut progress ring (plan 0021 — no SVG, no new dependency). The
- * classic two-layer border-arc technique: a full track ring, a top+right-bordered
- * half-ring rotated to sweep the first 0–50%, then either a track-colored "offset"
- * layer that re-hides the left half (≤50%) or a second colored half-ring that sweeps
- * 50–100% (>50%). Arc starts at 12 o'clock, clockwise. `fraction` is clamped to
- * [0,1] so an over-target value fills fully (the real % lives in the center label).
+ * Pure-`View` donut progress ring (plan 0021, geometry rewritten in 0026 — no SVG,
+ * no new dependency). The **overflow-clip two-half** technique, whose fill is exactly
+ * `fraction × 360°` (the earlier border-arc trick over-filled — the arc didn't match
+ * the percent).
+ *
+ * A full track ring, then TWO half-annulus "domes" — a top semicircular arc (top
+ * radii + no bottom border) rotated about the ring centre (`transformOrigin` at its
+ * bottom-centre) and CLIPPED to one side by an `overflow:'hidden'` half-container, so
+ * only the swept wedge shows. The fill grows 12 o'clock → clockwise:
+ *   - right half sweeps the first 0–180° at `rotate = min(deg,180) − 90`;
+ *   - left half sweeps 180–360° at `rotate = max(deg−180,0) + 90`.
+ * `fraction` is clamped to [0,1] so an over-target value fills fully (the real % lives
+ * in the centre label).
  */
 function ProgressRing({
   fraction,
@@ -146,40 +153,22 @@ function ProgressRing({
   trackColor: string;
   children: ReactNode;
 }) {
-  const pct = Math.min(Math.max(fraction, 0), 1) * 100;
-  const firstRotate = pct > 50 ? '45deg' : `${pct * 3.6 - 135}deg`;
+  const deg = Math.min(Math.max(fraction, 0), 1) * 360;
+  const rightRotate = Math.min(deg, 180) - 90; // right half fills first (0–180°).
+  const leftRotate = Math.max(deg - 180, 0) + 90; // left half fills second (180–360°).
   return (
     <View style={styles.ringWrap}>
       <View style={[styles.ringLayer, { borderColor: trackColor }]} />
-      <View
-        style={[
-          styles.ringArc,
-          { borderTopColor: color, borderRightColor: color, transform: [{ rotateZ: firstRotate }] },
-        ]}
-      />
-      {pct <= 50 ? (
+      <View style={styles.rightClip}>
         <View
-          style={[
-            styles.ringArc,
-            {
-              borderTopColor: trackColor,
-              borderRightColor: trackColor,
-              transform: [{ rotateZ: '-135deg' }],
-            },
-          ]}
+          style={[styles.arcDomeRight, { borderColor: color, transform: [{ rotate: `${rightRotate}deg` }] }]}
         />
-      ) : (
+      </View>
+      <View style={styles.leftClip}>
         <View
-          style={[
-            styles.ringArc,
-            {
-              borderTopColor: color,
-              borderRightColor: color,
-              transform: [{ rotateZ: `${(pct - 50) * 3.6 - 135}deg` }],
-            },
-          ]}
+          style={[styles.arcDomeLeft, { borderColor: color, transform: [{ rotate: `${leftRotate}deg` }] }]}
         />
-      )}
+      </View>
       {children}
     </View>
   );
@@ -209,13 +198,48 @@ const styles = StyleSheet.create({
     borderRadius: RING_SIZE / 2,
     borderWidth: RING_THICKNESS,
   },
-  ringArc: {
+  // Each half of the box, clipping its rotating dome so only the swept wedge shows.
+  rightClip: {
     position: 'absolute',
-    width: RING_SIZE,
+    left: RING_SIZE / 2,
+    top: 0,
+    width: RING_SIZE / 2,
     height: RING_SIZE,
-    borderRadius: RING_SIZE / 2,
+    overflow: 'hidden',
+  },
+  leftClip: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: RING_SIZE / 2,
+    height: RING_SIZE,
+    overflow: 'hidden',
+  },
+  // Top semicircular arc (half annulus): full-width, half-height, top radii, no bottom
+  // border; rotated about the ring centre (its own bottom-centre). `left` places it so
+  // it spans the whole box inside its half clip.
+  arcDomeRight: {
+    position: 'absolute',
+    left: -RING_SIZE / 2,
+    top: 0,
+    width: RING_SIZE,
+    height: RING_SIZE / 2,
+    borderTopLeftRadius: RING_SIZE / 2,
+    borderTopRightRadius: RING_SIZE / 2,
     borderWidth: RING_THICKNESS,
-    borderLeftColor: 'transparent',
-    borderBottomColor: 'transparent',
+    borderBottomWidth: 0,
+    transformOrigin: '50% 100%',
+  },
+  arcDomeLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: RING_SIZE,
+    height: RING_SIZE / 2,
+    borderTopLeftRadius: RING_SIZE / 2,
+    borderTopRightRadius: RING_SIZE / 2,
+    borderWidth: RING_THICKNESS,
+    borderBottomWidth: 0,
+    transformOrigin: '50% 100%',
   },
 });

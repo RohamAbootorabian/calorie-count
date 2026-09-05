@@ -1455,3 +1455,27 @@ follow-up noted. Math/window(~33d)/rollover confirmed sound.
 **Verified.** `tsc` 0; `expo lint` 0 (no warnings); full `expo export --platform web` 0 with the
 monthly copy in the bundle. No metric/tz logged; Pick allowlist; monthly gates only in its card. User
 verify pending.
+
+---
+
+## 2026-09-05 — Ring geometry fix: donut fill now matches the percentage (0021/0025)
+
+**What.** The plan-progress rings (weekly + monthly) over-filled — the colored arc didn't match
+the center percentage (e.g. Calories 56% looked ~78% full). Rewrote `ProgressRing`'s geometry so
+the fill is exactly `fraction × 360°`.
+
+**Why.** The original 0021 donut used the border-arc trick (a top+right-bordered ring rotated,
+with an offset/second layer). Without overflow clipping, the rotated 180° colored arcs bled past
+their intended half, so the visible fill exceeded the real percent — visibly wrong at larger values.
+
+**How.** Switched to the deterministic **overflow-clip two-half** technique: two `overflow:'hidden'`
+half-containers (left/right) each clip a rotating top semicircular arc (a half-annulus: top radii,
+no bottom border) rotated about the ring centre via `transformOrigin:'50% 100%'`. The right half
+sweeps the first 0–180° (`rotate = min(deg,180) − 90`), the left half sweeps 180–360°
+(`rotate = max(deg−180,0) + 90`); fill grows 12 o'clock → clockwise. Because each arc is clipped to
+its half, no stray pixels leak — the wedge is exactly the percent. Verified the angle math by
+cases (25%→right quarter, 50%→right half, 75%→12→9, 100%→full). Only `ProgressRing` + the ring
+styles changed; the percent/color/over-target/`PlanRingsCard` logic is untouched.
+
+**Verified.** `tsc` 0; `expo lint` 0; full `expo export --platform web` 0. Pure-View geometry —
+**needs the user's on-device visual confirmation** that each ring's fill now matches its number.
