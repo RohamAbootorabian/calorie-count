@@ -71,11 +71,13 @@ export function DateField({ label, value, onChange, maximumDate, error }: DateFi
           mode="date"
           display={Platform.OS === 'ios' ? 'inline' : 'default'}
           maximumDate={maximumDate}
-          onChange={(event, picked) => {
-            // Android returns type 'set'/'dismissed'; iOS 'set' on selection.
+          // v9 API: `onValueChange` (a day was picked) + `onDismiss` (closed) replace the
+          // deprecated `onChange`.
+          onValueChange={(_event, picked) => {
             setOpen(false);
-            if (event.type === 'set' && picked) onChange(noonLocal(picked));
+            if (picked) onChange(noonLocal(picked));
           }}
+          onDismiss={() => setOpen(false)}
         />
       ) : null}
 
