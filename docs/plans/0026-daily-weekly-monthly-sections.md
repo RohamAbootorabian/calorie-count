@@ -1,6 +1,6 @@
 # Plan: Split into Daily / Weekly / Monthly sections — three buttons on the dashboard
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user verify pending)
 - **Plan #**: 0026
 - **Created**: 2026-09-05
 
@@ -212,4 +212,30 @@ monthly screen replicating `trend-screen`'s card gating verbatim (`loading={mont
 goalsLoading}`, `error`, `goalsMissing`, `emptyNote`); no new data/query/schema.
 
 ## Execution log
-<!-- Filled during execution. -->
+_Executed 2026-09-05. Landed to the approved plan (all six should-fixes) — no deviations._
+
+**Files.**
+- `lib/use-resolved-tz.ts` (**new, SF3**) — `useResolvedTz()` → `{ tz, profile, profileLoading,
+  profileError, refetchProfile }`; adopted by all four screens.
+- `screens/daily-summary.tsx` (**new, SF1**) — `DailySummary({ totals, goals })` + moved
+  `Bar`/`MetricBar`/`progressFor`/`Progress`/`round` + their styles + `guardedRatio`/`DimensionValue`
+  imports.
+- `screens/daily-summary-screen.tsx` (**new**) — `/daily`: `useResolvedTz` + `useDailyTotals` +
+  `useDailyGoals` + focus-refetch + gates + `<DailySummary/>` + no-meals note, in `<Screen scroll>`.
+- `screens/monthly-screen.tsx` (**new**) — `/monthly`: `useResolvedTz` + `useMonthlyTotals` +
+  `useDailyGoals` + focus-refetch + profile gates + monthly `PlanRingsCard`, in `<Screen scroll>` (SF6).
+- `screens/trend-screen.tsx` — removed the monthly card + all leftovers (SF2); full-screen centered
+  empty revert (SF5); adopted `useResolvedTz`.
+- `screens/dashboard-screen.tsx` — renders `<DailySummary/>` + `useResolvedTz`; the single button
+  became a 3-button row (`style={{flex:1}}`, SF4); dead imports pruned (SF2).
+- `app/daily.tsx`, `app/monthly.tsx` (**new** re-exports) + `_layout.tsx` (guarded `daily`/`monthly`
+  screens, titles "Daily Summary" / "Monthly Review").
+
+**Deviations.** None.
+
+**Verification.** `npx tsc --noEmit` exit 0. `npx expo lint` exit 0. Full `npx expo export --platform
+web` exit 0 with the new code in the bundle. Grep gate: no `useMonthlyTotals`/`planMetrics`/
+`refetchMonthly`/`monthMetrics` left in `trend-screen.tsx`; no dead imports in `dashboard-screen.tsx`;
+`useResolvedTz` adopted by all four screens. **User verify pending** — Home shows Daily · Weekly ·
+Monthly; each opens its own screen; Weekly has no monthly card; Monthly shows the rings; Daily shows
+today's summary.

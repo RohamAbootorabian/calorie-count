@@ -1479,3 +1479,33 @@ styles changed; the percent/color/over-target/`PlanRingsCard` logic is untouched
 
 **Verified.** `tsc` 0; `expo lint` 0; full `expo export --platform web` 0. Pure-View geometry —
 **needs the user's on-device visual confirmation** that each ring's fill now matches its number.
+
+---
+
+## 2026-09-05 — Plan 0026 executed: Daily / Weekly / Monthly sections + 3 dashboard buttons (verify pending)
+
+**What.** The Trend screen's stacked weekly+monthly is split into three standalone period screens,
+reached from a row of three buttons on Home (Daily · Weekly · Monthly) that replace the old single
+"Weekly trend →". Daily = today's numeric summary (calories + macros); Weekly = the bar chart +
+weekly rings + weekly average (monthly card removed); Monthly = the four month-to-date rings on their
+own screen.
+
+**Why.** User wanted the monthly section separated with its own button, alongside Daily + Weekly.
+
+**How.** Pure client, no migration/dep, no new data logic. Extracted `DailySummary` (the calories +
+macros cards, reused by Home + /daily) and `useResolvedTz()` (the tz + profile-gate plumbing, now
+shared by all four screens). New `/daily` + `/monthly` routes (thin re-exports + guarded _layout
+registration, mirroring /trends). `trend-screen` reverted to weekly-only (monthly card + all its
+leftovers removed; full-screen empty state restored). Dashboard's single button became a
+`flexDirection:'row'` of three `style={{flex:1}}` secondary buttons.
+
+**Review (3-lens, 0 blockers).** SFs folded: SF1 moved the styles + guardedRatio import + Progress
+type WITH DailySummary; SF2 pruned dead imports on both edited files; SF3 extracted useResolvedTz
+(4 tz/profile copies → one hook); SF4 the button row uses style flex:1 (not fullWidth, which stretches
+the cross axis); SF5 weekly revert = full-screen centered empty (not the 0025 inline card); SF6
+/monthly uses <Screen scroll>. Confirmed: routing pattern, DS Button can do 3-in-a-row, trend revert
+doesn't reintroduce the 0025 B1 bug.
+
+**Verified.** `tsc` 0; `expo lint` 0; full `expo export --platform web` 0 with the new code in the
+bundle. Grep gate: no monthly leftovers in trend-screen; no dead imports in dashboard; useResolvedTz
+in all four screens. User verify pending.

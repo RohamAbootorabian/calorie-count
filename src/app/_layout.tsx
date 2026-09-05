@@ -112,6 +112,10 @@ function RootNavigator() {
          * the dashboard's "Weekly trend" button.
          */}
         <Stack.Screen name="trends" options={{ headerShown: true, title: 'Weekly Trend' }} />
+        {/* Daily + Monthly reviews (plan 0026) — same guarded root-sibling pattern as
+         * trends; reached from the dashboard's Daily / Monthly buttons. */}
+        <Stack.Screen name="daily" options={{ headerShown: true, title: 'Daily Summary' }} />
+        <Stack.Screen name="monthly" options={{ headerShown: true, title: 'Monthly Review' }} />
       </Stack.Protected>
       {/*
        * Privacy policy — UNGUARDED sibling so it's reachable from every auth

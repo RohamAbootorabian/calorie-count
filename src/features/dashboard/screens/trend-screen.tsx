@@ -1,34 +1,27 @@
 /**
- * Weekly + monthly plan review (plans 0018–0025). A 7-day calorie bar chart + a
- * weekly average, a "This week's plan" rings card, and a "This month's plan" rings
- * card — all on one screen, presented over the tabs as a root `Stack.Screen`.
+ * Weekly trend (plans 0018–0021) — the `/trends` route, reached from the dashboard's
+ * "Weekly" button. A 7-day calorie bar chart (Saturday→Friday, today highlighted, with
+ * the goal line), a "This week's plan" rings card, and the weekly average. Presents
+ * over the tabs as a root `Stack.Screen`. (The monthly rings moved to their own
+ * `/monthly` screen in plan 0026.)
  *
- * Mirrors `dashboard-screen.tsx`: owns the SINGLE `useProfile()`, resolves the tz
- * (`resolveTimezone`), and passes it into the totals hooks. Gate order: profile/
- * weekly loading → spinner; profile error → Retry; weekly totals error → Retry.
- * BELOW those, the weekly section (bars + rings + average, or an inline empty note)
- * and the monthly rings card render under ONE `<Screen>` — the monthly card is
- * UNCONDITIONAL (plan 0025 B1: a ≥7-day recent gap must not hide month-to-date data).
- *
- * Bars encode CALORIES only; macros show as the weekly average (denominator = LOGGED
- * days only, so a partial week isn't diluted; 0 logged → "—", never NaN). The rings
- * (`PlanRingsCard`) show consumed ÷ (goal × elapsed) per macro; monthly loading/error
- * are handled INSIDE its card (plan 0025 SF3 — never in the screen's top gate).
+ * Owns `useResolvedTz` + `useWeeklyTotals(tz)` + `useDailyGoals`, refetch-on-focus.
+ * Gate order: profile/weekly loading → spinner; profile error → Retry; weekly error →
+ * Retry; all-7-empty → a friendly full-screen empty state. Bars encode CALORIES only;
+ * macros show as the weekly average (denominator = LOGGED days, so a partial week isn't
+ * diluted; 0 logged → "—"). The rings show consumed ÷ (goal × elapsed) per macro.
  */
 import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { ActivityIndicator, StyleSheet, View, type DimensionValue } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
-import { resolveTimezone } from '@/features/auth/lib/profile-form';
-import { useProfile } from '@/features/auth/lib/use-profile';
 import { useTheme } from '@/hooks/use-theme';
 import { useUser } from '@/lib/auth';
 import { Button, Card, Screen, Text } from '@/shared/ui';
 
-import { planMetrics } from '../lib/plan-progress';
 import { useDailyGoals } from '../lib/use-daily-goals';
-import { useMonthlyTotals } from '../lib/use-monthly-totals';
+import { useResolvedTz } from '../lib/use-resolved-tz';
 import { useWeeklyTotals, type DayTotals } from '../lib/use-weekly-totals';
 import { weekPlanProgress } from '../lib/week-plan-progress';
 import { PlanRingsCard } from './metric-ring';
@@ -47,22 +40,8 @@ function saturdayFirstRank(key: string): number {
 export default function TrendScreen() {
   const { user } = useUser();
   const userId = user?.id ?? null;
-  const {
-    profile,
-    loading: profileLoading,
-    error: profileError,
-    refetch: refetchProfile,
-  } = useProfile();
-  const tz = resolveTimezone(profile?.timezone);
+  const { tz, profileLoading, profileError, refetchProfile } = useResolvedTz();
   const { days, loading, error, refetch } = useWeeklyTotals(tz);
-  const {
-    consumed: monthConsumed,
-    elapsed: monthElapsed,
-    mealCount: monthMealCount,
-    loading: monthlyLoading,
-    error: monthlyError,
-    refetch: refetchMonthly,
-  } = useMonthlyTotals(tz);
 
   // Calorie goal for the reference line + the rings — NON-FATAL (never gates the screen).
   const { goals, loading: goalsLoading, refetch: refetchGoals } = useDailyGoals();
@@ -71,15 +50,13 @@ export default function TrendScreen() {
       ? goals.calories
       : null;
 
-  // Reflect a newly-logged / edited meal + an edited goal on return to the screen.
   useFocusEffect(
     useCallback(() => {
       if (userId) {
         refetch();
         refetchGoals();
-        refetchMonthly();
       }
-    }, [userId, refetch, refetchGoals, refetchMonthly]),
+    }, [userId, refetch, refetchGoals]),
   );
 
   if (profileLoading || loading) {
@@ -95,82 +72,68 @@ export default function TrendScreen() {
   if (error) return <ErrorState onRetry={refetch} />;
 
   const loggedDays = days.filter((d) => d.mealCount > 0);
-  const weeklyEmpty = loggedDays.length === 0;
+  if (loggedDays.length === 0) {
+    return (
+      <Screen>
+        <View style={styles.center}>
+          <Text type="default" themeColor="textSecondary" style={styles.centerText}>
+            No meals in the last 7 days — snap one from Capture.
+          </Text>
+        </View>
+      </Screen>
+    );
+  }
 
   const maxCalories = Math.max(...days.map((d) => d.calories));
   // Domain headroom ONLY when a goal exists, so the line never pins at the ceiling (plan 0019 B1).
   const domainMax = goalCal != null ? Math.max(maxCalories, goalCal * 1.1) : maxCalories;
   const avg = (select: (d: DayTotals) => number) =>
-    loggedDays.length === 0
-      ? 0
-      : Math.round(loggedDays.reduce((sum, d) => sum + select(d), 0) / loggedDays.length);
+    Math.round(loggedDays.reduce((sum, d) => sum + select(d), 0) / loggedDays.length);
 
   // Bars: same last-7-days data, re-ordered into a fixed Saturday→Friday layout (display-only).
   const displayDays = [...days].sort((a, b) => saturdayFirstRank(a.key) - saturdayFirstRank(b.key));
 
-  const goalsMissing = !goalsLoading && goals == null;
   const week = weekPlanProgress(days, goals);
-  const monthMetrics = planMetrics(monthConsumed, goals, monthElapsed);
 
   return (
     <Screen scroll contentContainerStyle={styles.screenContent}>
-      {weeklyEmpty ? (
-        <Card style={styles.summaryCard}>
-          <Text type="default" themeColor="textSecondary" style={styles.centerText}>
-            No meals in the last 7 days — snap one from Capture.
-          </Text>
-        </Card>
-      ) : (
-        <>
-          <Card style={styles.chartCard}>
-            <Text type="small" themeColor="textSecondary">
-              Calories · last 7 days
-              {goalCal != null ? ` · goal ${round(goalCal)} kcal` : ''}
-            </Text>
-            <View style={styles.chart}>
-              {displayDays.map((day) => (
-                <DayBar
-                  key={day.key}
-                  day={day}
-                  domainMax={domainMax}
-                  goalCal={goalCal}
-                  isToday={day.isToday}
-                />
-              ))}
-            </View>
-          </Card>
+      <Card style={styles.chartCard}>
+        <Text type="small" themeColor="textSecondary">
+          Calories · last 7 days
+          {goalCal != null ? ` · goal ${round(goalCal)} kcal` : ''}
+        </Text>
+        <View style={styles.chart}>
+          {displayDays.map((day) => (
+            <DayBar
+              key={day.key}
+              day={day}
+              domainMax={domainMax}
+              goalCal={goalCal}
+              isToday={day.isToday}
+            />
+          ))}
+        </View>
+      </Card>
 
-          <PlanRingsCard
-            title={`This week's plan · ${week.elapsed} of 7 day${week.elapsed === 1 ? '' : 's'}`}
-            loading={goalsLoading}
-            goalsMissing={goalsMissing}
-            metrics={week}
-          />
-
-          <Card style={styles.summaryCard}>
-            <Text type="small" themeColor="textSecondary">
-              Weekly average · over {loggedDays.length} logged day
-              {loggedDays.length === 1 ? '' : 's'}
-            </Text>
-            <Text type="subtitle">{avg((d) => d.calories)} kcal / day</Text>
-            <View style={styles.macros}>
-              <MacroAvg label="Protein" grams={avg((d) => d.protein)} />
-              <MacroAvg label="Carbs" grams={avg((d) => d.carbs)} />
-              <MacroAvg label="Fat" grams={avg((d) => d.fat)} />
-            </View>
-          </Card>
-        </>
-      )}
-
-      {/* Monthly plan — UNCONDITIONAL (plan 0025 B1); own gates handled in the card (SF3). */}
       <PlanRingsCard
-        title={`This month's plan · ${monthElapsed} day${monthElapsed === 1 ? '' : 's'}`}
-        loading={monthlyLoading || goalsLoading}
-        error={monthlyError}
-        goalsMissing={goalsMissing}
-        emptyNote={monthMealCount === 0 ? 'No meals logged this month yet.' : undefined}
-        metrics={monthMetrics}
+        title={`This week's plan · ${week.elapsed} of 7 day${week.elapsed === 1 ? '' : 's'}`}
+        loading={goalsLoading}
+        goalsMissing={!goalsLoading && goals == null}
+        metrics={week}
       />
+
+      <Card style={styles.summaryCard}>
+        <Text type="small" themeColor="textSecondary">
+          Weekly average · over {loggedDays.length} logged day
+          {loggedDays.length === 1 ? '' : 's'}
+        </Text>
+        <Text type="subtitle">{avg((d) => d.calories)} kcal / day</Text>
+        <View style={styles.macros}>
+          <MacroAvg label="Protein" grams={avg((d) => d.protein)} />
+          <MacroAvg label="Carbs" grams={avg((d) => d.carbs)} />
+          <MacroAvg label="Fat" grams={avg((d) => d.fat)} />
+        </View>
+      </Card>
     </Screen>
   );
 }
@@ -262,7 +225,6 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   centerText: { textAlign: 'center' },
-  // Vertical gap between cards.
   screenContent: { gap: Spacing.four },
   chartCard: { gap: Spacing.three },
   chart: {
@@ -273,7 +235,6 @@ const styles = StyleSheet.create({
   },
   col: { flex: 1, alignItems: 'center', gap: Spacing.two, height: '100%' },
   calLabel: { minHeight: 16, marginBottom: Spacing.one },
-  // Extra breathing room so the weekday sits clearly below the bars, not glued to them.
   dayLabel: { marginTop: Spacing.two },
   track: {
     flex: 1,
