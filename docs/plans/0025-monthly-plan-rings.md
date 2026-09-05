@@ -1,6 +1,6 @@
 # Plan: Monthly plan review — four rings (calories/protein/carbs/fat) on the Trend screen
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user verify pending)
 - **Plan #**: 0025
 - **Created**: 2026-09-05
 
@@ -255,4 +255,31 @@ monthly hook (sum + elapsed, no per-day buckets) is a genuine simplification; sa
 route) + dashboard-local ring are consistent with 0021.
 
 ## Execution log
-<!-- Filled during execution. -->
+_Executed 2026-09-05. Landed to the approved plan (blocker + all should-fixes) — no deviations._
+
+**Files.**
+- `lib/plan-progress.ts` (**new, SF2**) — `MetricProgress` + `ConsumedMacros` + `PlanMetrics` types
+  and `planMetrics(consumed, goals, elapsed)` (the four-metric `guardedRatio` mapping).
+- `lib/week-plan-progress.ts` — now imports `planMetrics`/types from `plan-progress.ts`; keeps the
+  Saturday-based `elapsed`/`consumed` derivation, `EMPTY = { elapsed:0, ...planMetrics(zero,null,0) }`,
+  returns `{ elapsed, ...planMetrics(...) }`. Re-exports `MetricProgress`. Behavior unchanged.
+- `lib/use-monthly-totals.tsx` (**new**) — month-to-date sum + `elapsed = Number(todayKey.slice(8,10))`;
+  ~33-day window; `startsWith(YYYY-MM)` + `<= todayKey` bucket; live `todayKey` (0023); explicit
+  `(userId, reloadKey)` freshness gate + `userId==null → ZERO_CONSUMED` (SF5); strict `Pick<>`
+  allowlist, `.eq('user_id')`, no-log.
+- `screens/metric-ring.tsx` (**new, SF1**) — extracted `ProgressRing`/`MetricRing`/`formatPercent`/
+  `RING_*`/ring styles PLUS the shared `PlanRingsCard` (title + loading/error/goalsMissing/emptyNote/
+  rings gates). `minimumFontScale` 0.6 → **0.5** (SF4).
+- `screens/trend-screen.tsx` — removed the extracted ring code/styles; **restructured (B1)** so the
+  weekly-empty state is an INLINE card and the monthly `PlanRingsCard` renders UNCONDITIONALLY under
+  one `<Screen>`; weekly + monthly both use `PlanRingsCard`; `useMonthlyTotals` + `refetchMonthly` on
+  focus; `avg` guards `loggedDays.length===0`; monthly gates passed ONLY to its card (SF3).
+
+**Deviations.** None. (Removed a stray `DimensionValue` import the extraction copied — lint warning.)
+
+**Verification.** `npx tsc --noEmit` exit 0. `npx expo lint` exit 0 (no warnings). Full `npx expo
+export --platform web` exit 0 with the monthly copy in the compiled bundle. Grep gate: no `console.*`
+in the three new files; `useMonthlyTotals` uses the `Pick<>` allowlist (no `select('*')`);
+`monthlyLoading`/`monthlyError` appear only in the destructure + the monthly card props, never the
+top gate (SF3). **User verify pending** — `/trends` shows the monthly card with correct month-to-date
+%; it renders even with no meals in the last 7 days; over-target/no-goal/empty-month copy behave.

@@ -1424,3 +1424,34 @@ noted, no-log grep gate, healedFor is defensive-only.
 **Verified.** `tsc` 0; `expo lint` 0; full `expo export --platform web` 0 with the hook in the
 bundle. No tz/error logged; single-column update (not upsert). User verify pending (Settings shows
 the real zone; display_name/units unchanged; no repeat write on relaunch).
+
+---
+
+## 2026-09-05 — Plan 0025 executed: monthly plan rings on the Trend screen (verify pending)
+
+**What.** A "This month's plan · N days" card of four rings (Calories/Protein/Carbs/Fat) on
+`/trends`, below the weekly section: `consumed(month-to-date) ÷ (daily goal × days elapsed this
+month)`, real % center, 100% visual cap, `danger` over-target — same conventions as the weekly rings
+(0021). Empty month → "No meals logged this month yet."
+
+**Why.** User asked for a monthly review analog to the weekly plan rings.
+
+**How.** Pure client, no migration, no new dependency. New `useMonthlyTotals(tz)` fetches a ~33-day
+window and sums the rows whose tz-date startsWith the current YYYY-MM (elapsed = today's day-of-month,
+from the live `todayKey`, so it re-buckets at midnight/month rollover with no refetch — 0023 pattern).
+Extracted the ring UI + a shared `PlanRingsCard` into `metric-ring.tsx`, and the four-metric mapping
+into a neutral `plan-progress.ts` (`planMetrics`), so weekly + monthly render/compute identically.
+
+**Review (4-lens) — 1 blocker resolved.** B1: the weekly all-7-empty early-return sat above the
+monthly card, hiding it for a user with month-to-date meals but a ≥7-day recent gap; fixed by
+restructuring trend-screen so the weekly-empty state is inline and the monthly card renders
+unconditionally under one <Screen>. SFs folded: shared PlanRingsCard (no duplicated gate JSX);
+planMetrics in a neutral plan-progress.ts (not week-plan-progress); monthly loading/error kept OUT of
+the screen top gate; ring subtext minimumFontScale 0.6→0.5 for 6-digit monthly targets; explicit
+(userId,reloadKey) freshness gate + userId==null zeroing in useMonthlyTotals. NITs: empty-month copy,
+now()/immutable eaten_at invariant (+ a <=todayKey belt-and-suspenders bucket guard), useOwnedMealRows
+follow-up noted. Math/window(~33d)/rollover confirmed sound.
+
+**Verified.** `tsc` 0; `expo lint` 0 (no warnings); full `expo export --platform web` 0 with the
+monthly copy in the bundle. No metric/tz logged; Pick allowlist; monthly gates only in its card. User
+verify pending.

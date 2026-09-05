@@ -7,45 +7,27 @@
  *
  *   percent = consumed(Saturday→today) ÷ (dailyGoal × daysElapsedSinceSaturday)
  *
- * No I/O, no new fetch, no schema — it re-sums a contiguous tail of the SAME rows
- * the bars use. PRIVACY: never logs a consumed/target/percent/goal value.
+ * The four-metric mapping is the shared `planMetrics` (plan 0025 — one source of
+ * truth with the monthly path); this module only derives the Saturday-based
+ * `elapsed` + `consumed` tail. No I/O, no new fetch, no schema. PRIVACY: never logs
+ * a consumed/target/percent/goal value.
  *
- * ELAPSED (SF1): today is always the last chronological `days` entry. The count of
- * days from the most-recent Saturday to today (inclusive) is `todaySatRank + 1`,
- * where the Saturday-first rank is `(getUTCDay() + 1) % 7` (Sat→0 … Fri→6) — the
- * SAME locale-free UTC path the day keys use (the `key` is a UTC-midnight date), so
- * it inherits the hook's DST-safe posture. Defensive: an empty / today-less `days`
- * yields `elapsed: 0` and all-null metrics, so a `goal × 0` denominator can never
- * divide (which the `goal > 0` guard alone would NOT catch).
+ * ELAPSED: today is always the last chronological `days` entry. The count of days
+ * from the most-recent Saturday to today (inclusive) is `todaySatRank + 1`, where
+ * the Saturday-first rank is `(getUTCDay() + 1) % 7` (Sat→0 … Fri→6) — the SAME
+ * locale-free UTC path the day keys use (the `key` is a UTC-midnight date). Defensive:
+ * an empty / today-less `days` yields `elapsed: 0` and all-null metrics.
  */
-import { guardedRatio } from './guarded-ratio';
+import { planMetrics, type ConsumedMacros, type PlanMetrics } from './plan-progress';
 import type { DailyGoals } from './use-daily-goals';
 import type { DayTotals } from './use-weekly-totals';
 
-/** One ring's data. `percent` is the RAW ratio (may exceed 1); null = no target. */
-export type MetricProgress = {
-  percent: number | null;
-  consumed: number;
-  target: number;
-};
+export type { MetricProgress } from './plan-progress';
 
-export type WeekPlanProgress = {
-  /** Days from this Saturday through today, inclusive (1–7); 0 iff `days` is unusable. */
-  elapsed: number;
-  calories: MetricProgress;
-  protein: MetricProgress;
-  carbs: MetricProgress;
-  fat: MetricProgress;
-};
+export type WeekPlanProgress = { elapsed: number } & PlanMetrics;
 
-const NULL_METRIC: MetricProgress = { percent: null, consumed: 0, target: 0 };
-const EMPTY: WeekPlanProgress = {
-  elapsed: 0,
-  calories: NULL_METRIC,
-  protein: NULL_METRIC,
-  carbs: NULL_METRIC,
-  fat: NULL_METRIC,
-};
+const ZERO_CONSUMED: ConsumedMacros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
+const EMPTY: WeekPlanProgress = { elapsed: 0, ...planMetrics(ZERO_CONSUMED, null, 0) };
 
 /** Days from the most-recent Saturday to `todayKey` (a `YYYY-MM-DD` UTC date), inclusive. */
 function elapsedSinceSaturday(todayKey: string): number {
@@ -69,12 +51,7 @@ export function weekPlanProgress(days: DayTotals[], goals: DailyGoals | null): W
   // contiguous tail (Saturday is always ≤6 days before today, inside the 7-day window).
   const week = days.slice(Math.max(0, days.length - elapsed));
 
-  const consumed = {
-    calories: 0,
-    protein: 0,
-    carbs: 0,
-    fat: 0,
-  };
+  const consumed: ConsumedMacros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
   for (const d of week) {
     consumed.calories += d.calories;
     consumed.protein += d.protein;
@@ -82,16 +59,5 @@ export function weekPlanProgress(days: DayTotals[], goals: DailyGoals | null): W
     consumed.fat += d.fat;
   }
 
-  const metric = (value: number, dailyGoal: number | null | undefined): MetricProgress => {
-    const target = typeof dailyGoal === 'number' ? dailyGoal * elapsed : 0;
-    return { percent: guardedRatio(value, target), consumed: value, target };
-  };
-
-  return {
-    elapsed,
-    calories: metric(consumed.calories, goals?.calories),
-    protein: metric(consumed.protein, goals?.protein),
-    carbs: metric(consumed.carbs, goals?.carbs),
-    fat: metric(consumed.fat, goals?.fat),
-  };
+  return { elapsed, ...planMetrics(consumed, goals, elapsed) };
 }

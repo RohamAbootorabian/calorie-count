@@ -1,19 +1,22 @@
 /**
- * Weekly calorie trend (plan 0018) — a 7-day bar chart of daily calories + a weekly
- * average summary. Presented over the tabs as a root `Stack.Screen` (reached from the
- * dashboard's "Weekly trend" button).
+ * Weekly + monthly plan review (plans 0018–0025). A 7-day calorie bar chart + a
+ * weekly average, a "This week's plan" rings card, and a "This month's plan" rings
+ * card — all on one screen, presented over the tabs as a root `Stack.Screen`.
  *
- * Mirrors `dashboard-screen.tsx`: owns the SINGLE `useProfile()`, resolves the timezone
- * (stored tz → device tz → UTC), and passes it into `useWeeklyTotals(tz)`. Gate order:
- * loading (profile||totals) → spinner; profile error → Retry; totals error → Retry;
- * all-7-empty → friendly empty state.
+ * Mirrors `dashboard-screen.tsx`: owns the SINGLE `useProfile()`, resolves the tz
+ * (`resolveTimezone`), and passes it into the totals hooks. Gate order: profile/
+ * weekly loading → spinner; profile error → Retry; weekly totals error → Retry.
+ * BELOW those, the weekly section (bars + rings + average, or an inline empty note)
+ * and the monthly rings card render under ONE `<Screen>` — the monthly card is
+ * UNCONDITIONAL (plan 0025 B1: a ≥7-day recent gap must not hide month-to-date data).
  *
- * Bars encode CALORIES only (no per-macro color token exists); macros show as the weekly
- * average. The average denominator is LOGGED days only (mealCount > 0), so a partial week
- * isn't diluted; 0 logged days shows "—", never NaN.
+ * Bars encode CALORIES only; macros show as the weekly average (denominator = LOGGED
+ * days only, so a partial week isn't diluted; 0 logged → "—", never NaN). The rings
+ * (`PlanRingsCard`) show consumed ÷ (goal × elapsed) per macro; monthly loading/error
+ * are handled INSIDE its card (plan 0025 SF3 — never in the screen's top gate).
  */
 import { useFocusEffect } from 'expo-router';
-import { useCallback, type ReactNode } from 'react';
+import { useCallback } from 'react';
 import { ActivityIndicator, StyleSheet, View, type DimensionValue } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
@@ -23,13 +26,14 @@ import { useTheme } from '@/hooks/use-theme';
 import { useUser } from '@/lib/auth';
 import { Button, Card, Screen, Text } from '@/shared/ui';
 
+import { planMetrics } from '../lib/plan-progress';
 import { useDailyGoals } from '../lib/use-daily-goals';
+import { useMonthlyTotals } from '../lib/use-monthly-totals';
 import { useWeeklyTotals, type DayTotals } from '../lib/use-weekly-totals';
-import { weekPlanProgress, type MetricProgress } from '../lib/week-plan-progress';
+import { weekPlanProgress } from '../lib/week-plan-progress';
+import { PlanRingsCard } from './metric-ring';
 
 const CHART_HEIGHT = 200;
-const RING_SIZE = 76;
-const RING_THICKNESS = 8;
 
 function round(n: number): number {
   return Math.round(n);
@@ -38,13 +42,6 @@ function round(n: number): number {
 /** Saturday-first display rank for a `YYYY-MM-DD` UTC key: Sat→0 … Fri→6 (plan 0021). */
 function saturdayFirstRank(key: string): number {
   return (new Date(key).getUTCDay() + 1) % 7;
-}
-
-/** Center label: rounded percent, capped so an absurd value can't overflow the donut. */
-function formatPercent(percent: number | null): string {
-  if (percent === null) return '—';
-  const pct = Math.round(percent * 100);
-  return pct > 999 ? '999%+' : `${pct}%`;
 }
 
 export default function TrendScreen() {
@@ -58,12 +55,16 @@ export default function TrendScreen() {
   } = useProfile();
   const tz = resolveTimezone(profile?.timezone);
   const { days, loading, error, refetch } = useWeeklyTotals(tz);
+  const {
+    consumed: monthConsumed,
+    elapsed: monthElapsed,
+    mealCount: monthMealCount,
+    loading: monthlyLoading,
+    error: monthlyError,
+    refetch: refetchMonthly,
+  } = useMonthlyTotals(tz);
 
-  // Calorie goal for the reference line — NON-FATAL (never gates the chart; plan 0019).
-  // Derived during render (a hold-last-value cache via ref/state is blocked by the
-  // react-compiler lint rules); the brief line-drop while a goals refetch is in flight is
-  // masked by the totals loading gate (the whole chart is a spinner then, and the single-row
-  // goals query resolves before the 8-day totals query). Health data — never logged.
+  // Calorie goal for the reference line + the rings — NON-FATAL (never gates the screen).
   const { goals, loading: goalsLoading, refetch: refetchGoals } = useDailyGoals();
   const goalCal =
     !goalsLoading && typeof goals?.calories === 'number' && goals.calories > 0
@@ -76,8 +77,9 @@ export default function TrendScreen() {
       if (userId) {
         refetch();
         refetchGoals();
+        refetchMonthly();
       }
-    }, [userId, refetch, refetchGoals]),
+    }, [userId, refetch, refetchGoals, refetchMonthly]),
   );
 
   if (profileLoading || loading) {
@@ -93,88 +95,82 @@ export default function TrendScreen() {
   if (error) return <ErrorState onRetry={refetch} />;
 
   const loggedDays = days.filter((d) => d.mealCount > 0);
-  if (loggedDays.length === 0) {
-    return (
-      <Screen>
-        <View style={styles.center}>
-          <Text type="default" themeColor="textSecondary" style={styles.centerText}>
-            No meals in the last 7 days — snap one from Capture.
-          </Text>
-        </View>
-      </Screen>
-    );
-  }
+  const weeklyEmpty = loggedDays.length === 0;
 
   const maxCalories = Math.max(...days.map((d) => d.calories));
-  // Domain headroom ONLY when a goal exists, so the line never pins at the ceiling and the
-  // no-goal path stays identical to 0018 (bars fill fully to maxCalories). (plan 0019, B1)
+  // Domain headroom ONLY when a goal exists, so the line never pins at the ceiling (plan 0019 B1).
   const domainMax = goalCal != null ? Math.max(maxCalories, goalCal * 1.1) : maxCalories;
   const avg = (select: (d: DayTotals) => number) =>
-    Math.round(loggedDays.reduce((sum, d) => sum + select(d), 0) / loggedDays.length);
+    loggedDays.length === 0
+      ? 0
+      : Math.round(loggedDays.reduce((sum, d) => sum + select(d), 0) / loggedDays.length);
 
-  // Bars: same last-7-days data, re-ordered into a fixed Saturday→Friday layout (plan 0021).
-  // `days` stays chronological (the plan rings below depend on it); this is display-only.
+  // Bars: same last-7-days data, re-ordered into a fixed Saturday→Friday layout (display-only).
   const displayDays = [...days].sort((a, b) => saturdayFirstRank(a.key) - saturdayFirstRank(b.key));
 
-  // "This week's plan, so far" rings — computed AFTER the gates, where `days` is length-7
-  // (plan 0021 SF2). Goals may be null/loading — non-fatal (handled in the rings card).
-  const plan = weekPlanProgress(days, goals);
+  const goalsMissing = !goalsLoading && goals == null;
+  const week = weekPlanProgress(days, goals);
+  const monthMetrics = planMetrics(monthConsumed, goals, monthElapsed);
 
   return (
     <Screen scroll contentContainerStyle={styles.screenContent}>
-      <Card style={styles.chartCard}>
-        <Text type="small" themeColor="textSecondary">
-          Calories · last 7 days
-          {goalCal != null ? ` · goal ${round(goalCal)} kcal` : ''}
-        </Text>
-        <View style={styles.chart}>
-          {displayDays.map((day) => (
-            <DayBar
-              key={day.key}
-              day={day}
-              domainMax={domainMax}
-              goalCal={goalCal}
-              isToday={day.isToday}
-            />
-          ))}
-        </View>
-      </Card>
-
-      {/* This week's plan progress — four rings (plan 0021). */}
-      <Card style={styles.summaryCard}>
-        <Text type="small" themeColor="textSecondary">
-          This week&apos;s plan · {plan.elapsed} of 7 day{plan.elapsed === 1 ? '' : 's'}
-        </Text>
-        {goalsLoading ? (
-          <View style={styles.ringsLoading}>
-            <ActivityIndicator />
-          </View>
-        ) : goals == null ? (
-          <Text type="small" themeColor="textSecondary">
-            Set your goals in Settings to see weekly progress.
+      {weeklyEmpty ? (
+        <Card style={styles.summaryCard}>
+          <Text type="default" themeColor="textSecondary" style={styles.centerText}>
+            No meals in the last 7 days — snap one from Capture.
           </Text>
-        ) : (
-          <View style={styles.rings}>
-            <MetricRing label="Calories" unit="kcal" metric={plan.calories} />
-            <MetricRing label="Protein" unit="g" metric={plan.protein} />
-            <MetricRing label="Carbs" unit="g" metric={plan.carbs} />
-            <MetricRing label="Fat" unit="g" metric={plan.fat} />
-          </View>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <>
+          <Card style={styles.chartCard}>
+            <Text type="small" themeColor="textSecondary">
+              Calories · last 7 days
+              {goalCal != null ? ` · goal ${round(goalCal)} kcal` : ''}
+            </Text>
+            <View style={styles.chart}>
+              {displayDays.map((day) => (
+                <DayBar
+                  key={day.key}
+                  day={day}
+                  domainMax={domainMax}
+                  goalCal={goalCal}
+                  isToday={day.isToday}
+                />
+              ))}
+            </View>
+          </Card>
 
-      <Card style={styles.summaryCard}>
-        <Text type="small" themeColor="textSecondary">
-          Weekly average · over {loggedDays.length} logged day
-          {loggedDays.length === 1 ? '' : 's'}
-        </Text>
-        <Text type="subtitle">{avg((d) => d.calories)} kcal / day</Text>
-        <View style={styles.macros}>
-          <MacroAvg label="Protein" grams={avg((d) => d.protein)} />
-          <MacroAvg label="Carbs" grams={avg((d) => d.carbs)} />
-          <MacroAvg label="Fat" grams={avg((d) => d.fat)} />
-        </View>
-      </Card>
+          <PlanRingsCard
+            title={`This week's plan · ${week.elapsed} of 7 day${week.elapsed === 1 ? '' : 's'}`}
+            loading={goalsLoading}
+            goalsMissing={goalsMissing}
+            metrics={week}
+          />
+
+          <Card style={styles.summaryCard}>
+            <Text type="small" themeColor="textSecondary">
+              Weekly average · over {loggedDays.length} logged day
+              {loggedDays.length === 1 ? '' : 's'}
+            </Text>
+            <Text type="subtitle">{avg((d) => d.calories)} kcal / day</Text>
+            <View style={styles.macros}>
+              <MacroAvg label="Protein" grams={avg((d) => d.protein)} />
+              <MacroAvg label="Carbs" grams={avg((d) => d.carbs)} />
+              <MacroAvg label="Fat" grams={avg((d) => d.fat)} />
+            </View>
+          </Card>
+        </>
+      )}
+
+      {/* Monthly plan — UNCONDITIONAL (plan 0025 B1); own gates handled in the card (SF3). */}
+      <PlanRingsCard
+        title={`This month's plan · ${monthElapsed} day${monthElapsed === 1 ? '' : 's'}`}
+        loading={monthlyLoading || goalsLoading}
+        error={monthlyError}
+        goalsMissing={goalsMissing}
+        emptyNote={monthMealCount === 0 ? 'No meals logged this month yet.' : undefined}
+        metrics={monthMetrics}
+      />
     </Screen>
   );
 }
@@ -234,104 +230,6 @@ function DayBar({
   );
 }
 
-/** One plan-progress ring: donut + center percent + label + consumed/target. */
-function MetricRing({
-  label,
-  unit,
-  metric,
-}: {
-  label: string;
-  unit: string;
-  metric: MetricProgress;
-}) {
-  const theme = useTheme();
-  // Over-target (real % > 100) → danger color; the ring still fills to a visual cap.
-  const over = metric.percent != null && metric.percent > 1;
-  const color = over ? theme.danger : theme.primary;
-  return (
-    <View style={styles.ring}>
-      <ProgressRing fraction={metric.percent ?? 0} color={color} trackColor={theme.backgroundElement}>
-        <Text type="smallBold" numberOfLines={1} adjustsFontSizeToFit style={styles.ringCenter}>
-          {formatPercent(metric.percent)}
-        </Text>
-      </ProgressRing>
-      <Text type="smallBold" style={styles.ringLabel}>
-        {label}
-      </Text>
-      {metric.percent != null ? (
-        <Text
-          type="small"
-          themeColor="textSecondary"
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-          style={styles.ringSub}
-        >
-          {round(metric.consumed)}/{round(metric.target)} {unit}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
-/**
- * Pure-`View` donut progress ring (plan 0021 — no SVG, no new dependency). The
- * classic two-layer border-arc technique: a full track ring, a top+right-bordered
- * half-ring rotated to sweep the first 0–50%, then either a track-colored "offset"
- * layer that re-hides the left half (≤50%) or a second colored half-ring that sweeps
- * 50–100% (>50%). Arc starts at 12 o'clock, clockwise. `fraction` is clamped to
- * [0,1] so an over-target value fills fully (the real % lives in the center label).
- */
-function ProgressRing({
-  fraction,
-  color,
-  trackColor,
-  children,
-}: {
-  fraction: number;
-  color: string;
-  trackColor: string;
-  children: ReactNode;
-}) {
-  const pct = Math.min(Math.max(fraction, 0), 1) * 100;
-  const firstRotate = pct > 50 ? '45deg' : `${pct * 3.6 - 135}deg`;
-  return (
-    <View style={styles.ringWrap}>
-      <View style={[styles.ringLayer, { borderColor: trackColor }]} />
-      <View
-        style={[
-          styles.ringArc,
-          { borderTopColor: color, borderRightColor: color, transform: [{ rotateZ: firstRotate }] },
-        ]}
-      />
-      {pct <= 50 ? (
-        <View
-          style={[
-            styles.ringArc,
-            {
-              borderTopColor: trackColor,
-              borderRightColor: trackColor,
-              transform: [{ rotateZ: '-135deg' }],
-            },
-          ]}
-        />
-      ) : (
-        <View
-          style={[
-            styles.ringArc,
-            {
-              borderTopColor: color,
-              borderRightColor: color,
-              transform: [{ rotateZ: `${(pct - 50) * 3.6 - 135}deg` }],
-            },
-          ]}
-        />
-      )}
-      {children}
-    </View>
-  );
-}
-
 function MacroAvg({ label, grams }: { label: string; grams: number }) {
   return (
     <View style={styles.macroRow}>
@@ -364,7 +262,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   centerText: { textAlign: 'center' },
-  // Vertical gap between the chart card and the summary card.
+  // Vertical gap between cards.
   screenContent: { gap: Spacing.four },
   chartCard: { gap: Spacing.three },
   chart: {
@@ -389,36 +287,4 @@ const styles = StyleSheet.create({
   summaryCard: { gap: Spacing.two },
   macros: { gap: Spacing.one, marginTop: Spacing.one },
   macroRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  // Plan-progress rings (0021).
-  rings: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
-    gap: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  ringsLoading: { alignItems: 'center', paddingVertical: Spacing.three },
-  ring: { alignItems: 'center', gap: Spacing.one, width: RING_SIZE },
-  ringLabel: { marginTop: Spacing.one },
-  ringCenter: { width: RING_SIZE - RING_THICKNESS * 2 - 6, textAlign: 'center' },
-  // Consumed/target subtext: smaller base + auto-shrink so a long calories value
-  // (e.g. "1715/17148 kcal") fits the ring's width without truncating (0021 polish).
-  ringSub: { fontSize: 12, lineHeight: 16, textAlign: 'center' },
-  ringWrap: { width: RING_SIZE, height: RING_SIZE, alignItems: 'center', justifyContent: 'center' },
-  ringLayer: {
-    position: 'absolute',
-    width: RING_SIZE,
-    height: RING_SIZE,
-    borderRadius: RING_SIZE / 2,
-    borderWidth: RING_THICKNESS,
-  },
-  ringArc: {
-    position: 'absolute',
-    width: RING_SIZE,
-    height: RING_SIZE,
-    borderRadius: RING_SIZE / 2,
-    borderWidth: RING_THICKNESS,
-    borderLeftColor: 'transparent',
-    borderBottomColor: 'transparent',
-  },
 });
