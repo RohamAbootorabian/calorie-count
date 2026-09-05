@@ -28,7 +28,7 @@ import { useUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 
-import { makeDayFormatter } from './day-formatter';
+import { aggregateMonth, zeroWeeks, type MonthWeek } from './month-weeks';
 import type { ConsumedMacros } from './plan-progress';
 import { useCurrentDayKey } from './use-current-day-key';
 
@@ -53,6 +53,8 @@ export type MonthlyTotalsStatus = {
   elapsed: number;
   /** Number of meals counted this month (0 → "no meals this month yet"). */
   mealCount: number;
+  /** The four fixed week buckets (days 1–7 / 8–14 / 15–21 / 22–end), always length 4. */
+  weeks: MonthWeek[];
 };
 
 const ZERO_CONSUMED: ConsumedMacros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
@@ -113,40 +115,28 @@ export function useMonthlyTotals(tz: string): MonthlyTotalsStatus {
       ? outcome.rows
       : null;
 
-  // Re-sums whenever tz or the day/month rolls (todayKey) — no refetch.
-  const agg = useMemo<{ consumed: ConsumedMacros; mealCount: number }>(() => {
-    if (!rows) return { consumed: ZERO_CONSUMED, mealCount: 0 };
-    const fmt = makeDayFormatter(tz);
-    const prefix = todayKey.slice(0, 7); // YYYY-MM
-    const consumed: ConsumedMacros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
-    let mealCount = 0;
-    for (const r of rows) {
-      const dt = new Date(r.eaten_at);
-      if (Number.isNaN(dt.getTime())) continue;
-      const key = fmt.format(dt);
-      if (!key.startsWith(prefix)) continue; // not this month.
-      if (key > todayKey) continue; // belt-and-suspenders: never count a future-dated row.
-      consumed.calories += r.total_calories;
-      consumed.protein += r.total_protein;
-      consumed.carbs += r.total_carbs;
-      consumed.fat += r.total_fat;
-      mealCount += 1;
-    }
-    return { consumed, mealCount };
-  }, [rows, tz, todayKey]);
+  // Re-aggregates whenever tz or the day/month rolls (todayKey) — no refetch. The
+  // per-row bucketing + month-to-date sum live in the pure `aggregateMonth` helper.
+  const agg = useMemo(
+    () =>
+      rows
+        ? aggregateMonth(rows, tz, todayKey)
+        : { consumed: ZERO_CONSUMED, mealCount: 0, weeks: zeroWeeks(todayKey) },
+    [rows, tz, todayKey],
+  );
 
   return useMemo<MonthlyTotalsStatus>(() => {
-    if (!userId) {
-      return { loading: false, error: false, refetch, consumed: ZERO_CONSUMED, elapsed, mealCount: 0 };
-    }
+    const empty = {
+      consumed: ZERO_CONSUMED,
+      elapsed,
+      mealCount: 0,
+      weeks: zeroWeeks(todayKey),
+    };
+    if (!userId) return { loading: false, error: false, refetch, ...empty };
     const fresh =
       outcome?.userId === userId && outcome.reloadKey === reloadKey ? outcome : null;
-    if (!fresh) {
-      return { loading: true, error: false, refetch, consumed: ZERO_CONSUMED, elapsed, mealCount: 0 };
-    }
-    if (fresh.kind === 'error') {
-      return { loading: false, error: true, refetch, consumed: ZERO_CONSUMED, elapsed, mealCount: 0 };
-    }
+    if (!fresh) return { loading: true, error: false, refetch, ...empty };
+    if (fresh.kind === 'error') return { loading: false, error: true, refetch, ...empty };
     return {
       loading: false,
       error: false,
@@ -154,6 +144,7 @@ export function useMonthlyTotals(tz: string): MonthlyTotalsStatus {
       consumed: agg.consumed,
       elapsed,
       mealCount: agg.mealCount,
+      weeks: agg.weeks,
     };
-  }, [userId, reloadKey, outcome, agg, elapsed, refetch]);
+  }, [userId, reloadKey, outcome, agg, elapsed, todayKey, refetch]);
 }

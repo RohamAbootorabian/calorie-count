@@ -1,6 +1,6 @@
 # Plan: Home = a Daily/Weekly/Monthly segmented switcher + monthly bar chart & weekly-average
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** (2 stages) → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved (2 stages)~~ → ~~In Progress~~ → **Done** (both stages; user verify pending)
 - **Plan #**: 0027
 - **Created**: 2026-09-05
 
@@ -245,4 +245,31 @@ the hooks so moving callers into sections is safe; route removal has no dangling
 `router.push` + 3 re-exports + 3 `Stack.Screen` lines); no migration/new-dep/new-query.
 
 ## Execution log
-<!-- Filled during execution. -->
+_Executed 2026-09-05 in two stages — all blockers + should-fixes; no deviations._
+
+**Stage A** (commit `20b2050`) — the switcher + extraction + route removal.
+- New: `segmented-control.tsx` (B2 — own pressables, `numberOfLines`+`adjustsFontSizeToFit`),
+  `calorie-bar-chart.tsx` (extracted from `DayBar`; `hasData` blanks the label; fit-shrink value),
+  `section-status.tsx` (inline spinner/error), `daily-section.tsx` / `weekly-section.tsx` /
+  `monthly-section.tsx` (bare content, `tz`+`goals`[+`goalsLoading`] props, own period hook + inline
+  gates). `dashboard-screen.tsx` = the host: section state (Daily on cold start) + shared plumbing
+  (`useResolvedTz` + `useDailyGoals` + goals focus-refetch) + the frame (B1 — pinned greeting +
+  `SegmentedControl` above ONE `ScrollView`, insets + `MaxContentWidth` clamp). Removed
+  `trend-screen`/`daily-summary-screen`/`monthly-screen`, `app/{trends,daily,monthly}.tsx`, their
+  `Stack.Screen` entries + the stale comment. Verify: tsc/lint/export 0; no dangling route refs.
+
+**Stage B** — monthly parity.
+- New pure `lib/month-weeks.ts` (SF2) — `aggregateMonth(rows, tz, todayKey)` → `{ consumed,
+  mealCount, weeks }` (4 fixed buckets `min(floor((DD-1)/7),3)`; `isCurrent` from `todayKey`) +
+  `zeroWeeks(todayKey)` skeleton (SF3) + `MonthWeek` (no `label`/`days` — NITs). `use-monthly-totals`
+  now calls it in its memo and returns `weeks` (skeleton in all non-ok branches). `MonthlySection`
+  gained the 4-week `CalorieBarChart` ("Wk N" labels formatted here, one flat `daily×7` goal line,
+  current week highlighted) + a per-week average card ("N kcal / week", over logged weeks) above the
+  rings; empty-month → a single note.
+
+**Deviations.** None.
+
+**Verification (both stages).** `tsc` 0; `expo lint` 0; full `expo export --platform web` 0 with the
+new code in the bundle; no `console.*` in `month-weeks.ts`; no dangling `/trends`|`/daily`|`/monthly`
+refs. **User verify pending** — Home opens on Daily with the switcher; switching is in place; Monthly
+shows the 4-week bars + per-week average + rings.

@@ -1509,3 +1509,38 @@ doesn't reintroduce the 0025 B1 bug.
 **Verified.** `tsc` 0; `expo lint` 0; full `expo export --platform web` 0 with the new code in the
 bundle. Grep gate: no monthly leftovers in trend-screen; no dead imports in dashboard; useResolvedTz
 in all four screens. User verify pending.
+
+---
+
+## 2026-09-05 — Plan 0027 executed (2 stages): Home segmented switcher + monthly bar chart & per-week average (verify pending)
+
+**What.** The Home tab is now a Daily · Weekly · Monthly segmented switcher (opens on Daily, swaps
+in place, no navigation). Monthly reached parity with Weekly: a 4-week calorie bar chart (fixed
+buckets days 1–7/8–14/15–21/22–end, current week highlighted, one flat weekly-goal line at daily×7)
++ a per-week average card + the month-to-date rings.
+
+**Why.** User wanted the three period views as an in-place switcher on the entry screen (default
+Daily), and Monthly to gain a bar chart of the month's weeks + a per-week average — like Weekly.
+
+**How.** Two stages, pure client, no migration/dep. **Stage A** (commit 20b2050): host owns the
+frame (pinned greeting + a new `SegmentedControl` of own pressables above one ScrollView, insets +
+MaxContentWidth clamp) + shared plumbing (useResolvedTz + useDailyGoals); three bare-content section
+components (Daily/Weekly/Monthly) each own only their period hook + inline gates; extracted a shared
+`CalorieBarChart` (from DayBar, with `hasData` + fit-shrink label) + `section-status`. Removed the
+0026 pushed routes/screens (/trends, /daily, /monthly). **Stage B**: a pure `month-weeks.ts`
+(`aggregateMonth` → consumed + 4 week buckets via `min(floor((DD-1)/7),3)`, + `zeroWeeks` skeleton),
+`useMonthlyTotals` returns `weeks`, and `MonthlySection` renders the 4-week bar chart + per-week
+average.
+
+**Review (3-lens) — 2 blockers resolved.** B1: the scroll/inset composition — sections must be bare
+content, the host owns the single ScrollView + insets (a section reusing `<Screen scroll>` would
+double the top inset + nest scrolls). B2: the SegmentedControl needs its own pressables
+(numberOfLines + adjustsFontSizeToFit) — reused `Button` wraps "Monthly" at large text. SFs folded:
+host owns tz+goals+focus-refetch (sections own only their period hook); pure month-weeks helper (not
+hook growth); weeks skeleton in all branches; CalorieBarChart hasData (blank not "0") + fit-shrink;
+shipped in two stages. NITs: labels are a view concern (hook returns index), dropped MonthWeek.days,
+flat daily×7 goal line, kept the greeting, Daily on cold start.
+
+**Verified.** tsc 0; expo lint 0; full expo export (web) 0 (both stages); no console in month-weeks;
+no dangling route refs. User verify pending (switcher opens on Daily; in-place switch; monthly bars
++ per-week average).
