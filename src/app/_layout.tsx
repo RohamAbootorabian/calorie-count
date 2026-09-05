@@ -106,16 +106,6 @@ function RootNavigator() {
          * overrides the root headerShown:false.
          */}
         <Stack.Screen name="meal-edit" options={{ headerShown: true, title: 'Edit Meal' }} />
-        {/*
-         * Weekly calorie trend (plan 0018) — same GUARDED root-sibling pattern as
-         * meal-edit: presents over the tabs with a themed back chevron, reached from
-         * the dashboard's "Weekly trend" button.
-         */}
-        <Stack.Screen name="trends" options={{ headerShown: true, title: 'Weekly Trend' }} />
-        {/* Daily + Monthly reviews (plan 0026) — same guarded root-sibling pattern as
-         * trends; reached from the dashboard's Daily / Monthly buttons. */}
-        <Stack.Screen name="daily" options={{ headerShown: true, title: 'Daily Summary' }} />
-        <Stack.Screen name="monthly" options={{ headerShown: true, title: 'Monthly Review' }} />
       </Stack.Protected>
       {/*
        * Privacy policy — UNGUARDED sibling so it's reachable from every auth
