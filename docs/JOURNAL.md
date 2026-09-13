@@ -1576,3 +1576,32 @@ no-injection/owner-scoping, all 3 bucketing paths, History orders by eaten_at, n
 **Verified.** tsc 0; expo lint 0; full expo export (web) 0 with the native module NOT in the web
 bundle (platform-split) + the web fallback present; grep gate clean. Migration applied to prod.
 **Pending:** dev-build rebuild (native dep) + user device-verify.
+
+## 2026-09-13 — Plan 0029 executed: merge Upload into a single "Analyze meal" tap
+
+**What.** Removed the separate **Upload** button from the capture flow. From the moment a
+photo is picked, the note field + a single **Analyze meal** button show; one tap now uploads
+the photo to private Storage and then analyzes it via the Edge Function (phone still never
+calls OpenAI directly).
+
+**Why.** Two deliberate taps (Upload → Analyze) with an "Uploaded ✓" limbo in between was
+friction users didn't expect. One action matches the mental model.
+
+**How.** `capture-screen.tsx` only (UI + orchestration; helpers/taxonomy untouched). Merged
+`handleUpload`+`handleAnalyze` into one `handleAnalyzeMeal` and, per the 4-agent review,
+replaced the doubled state (`uploading`/`analyzing` + `errorMessage`/`analyzeError`) with a
+single `status` enum + single `error` channel tagged by phase. Invariants preserved/hardened:
+a synchronous `inFlight` ref makes the merged tap idempotent (no double upload / double OpenAI
+charge); the note is snapshotted before any await (no note-loss); analyze runs against the
+local resolved `path` (not async state); `mounted` guard after BOTH awaits; a failed analyze
+reuses the uploaded object (no re-upload); `analyzeAttempts` is never reset in-handler and a
+`>= MAX` guard blocks further paid taps; phase-specific retry labels + a phase loading line
+("Uploading…"/"Analyzing…"); non-retryable errors disable the primary button (steer to "Choose
+another"). Comments refreshed (Gemini→OpenAI, one-tap wording).
+
+**Review.** NEEDS CHANGES → 2 blockers (B1 note-loss, B2 double-charge) + several SHOULD-FIX
+resolved → APPROVED. Full findings in docs/plans/0029-merge-upload-into-analyze.md.
+
+**Verified.** tsc 0; expo lint 0; full expo export (web) 0. Pure client change — no migration,
+secret, or deploy; JS-only, user reloads.
+**Pending:** user device-verify (single-tap happy path + forced upload/analyze failures).

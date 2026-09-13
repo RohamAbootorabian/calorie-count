@@ -1,16 +1,23 @@
 /**
- * Capture screen (plan 0007 piece 1 + plan 0008 piece 2). The product core:
- * take **or** pick a meal photo → preview → upload to the private
- * `meal-photos/{uid}/…` bucket → **Analyze** it through the `analyze-meal` Edge
- * Function (phone NEVER calls Gemini directly) → an editable **review** card
- * (`MealReview`, piece 3) where the user corrects the estimate and **saves** it
- * to `meal_logs`/`meal_items` via the atomic `create_meal_log` RPC.
+ * Capture screen (plan 0007 piece 1 + plan 0008 piece 2; plan 0029 merge). The
+ * product core: take **or** pick a meal photo → preview → **Analyze meal** — a
+ * SINGLE tap that uploads the photo to the private `meal-photos/{uid}/…` bucket
+ * and then analyzes it through the `analyze-meal` Edge Function (phone NEVER calls
+ * OpenAI directly) → an editable **review** card (`MealReview`, piece 3) where the
+ * user corrects the estimate and **saves** it to `meal_logs`/`meal_items` via the
+ * atomic `create_meal_log` RPC.
  *
- * Retry discipline (B3): both helpers return a typed `kind`; we offer a bare
- * **Retry** only for transient kinds, and analysis retries are **bounded**
+ * State (plan 0029): a single `status` enum (`idle|uploading|analyzing`) + a
+ * single `error` channel (`{message,canRetry,phase}`) — the two phases are mutually
+ * exclusive on screen, so one model each avoids stale-error crossfire.
+ *
+ * Retry discipline (B3): both helpers return a typed `kind`; we offer a phase-
+ * specific **Retry** only for transient kinds, and analysis retries are **bounded**
  * (a malformed-AI loop is real paid spend) — after MAX attempts the user must
- * re-shoot. Analyze keeps its OWN state (never overloads the upload error) and
- * a `currentPath` ref ignores a late result if the photo was re-picked mid-call.
+ * re-shoot. A failed analyze reuses the already-uploaded photo (no re-upload / no
+ * duplicate object). A synchronous `inFlight` ref makes the single tap idempotent
+ * regardless of render timing (no double upload / double OpenAI charge), and a
+ * `currentPath` ref ignores a late analyze result if the photo was re-picked.
  * PII discipline: never log the uri/path/analysis. Sign-out can unmount us
  * mid-call, so post-await setState is guarded by a `mounted` ref (SF8).
  */
@@ -88,28 +95,36 @@ function deniedCopy(source: PhotoSource): string {
     : 'Photo access is off. Enable it in Settings to choose a meal photo.';
 }
 
+/** One error, tagged by the phase that raised it (drives the phase-specific label). */
+type CaptureError = { message: string; canRetry: boolean; phase: 'upload' | 'analyze' };
+
 export function CaptureScreen() {
   const router = useRouter();
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string>();
-  const [canRetry, setCanRetry] = useState(false);
   const [uploadedPath, setUploadedPath] = useState<string | null>(null);
 
-  // Optional meal note (plan 0020) — typed after upload, before Analyze; sent WITH
+  // Single phase enum + single error channel (plan 0029): the upload and analyze
+  // phases never co-render, so one model each removes the old stale-error crossfire.
+  const [status, setStatus] = useState<'idle' | 'uploading' | 'analyzing'>('idle');
+  const [error, setError] = useState<CaptureError | null>(null);
+  const busy = status !== 'idle';
+
+  // Optional meal note (plan 0020) — typed before the single Analyze tap; sent WITH
   // the photo and seeded into the review form. Cleared via `resetAnalyze` (every
   // reset path funnels through it, so a re-pick never carries a stale note).
   const [note, setNote] = useState('');
 
-  // Analyze step — its OWN state so a stale upload error never renders here.
-  const [analyzing, setAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<MealAnalysis | null>(null);
-  const [analyzeError, setAnalyzeError] = useState<string>();
-  const [analyzeCanRetry, setAnalyzeCanRetry] = useState(false);
+  // Bounded paid-spend budget — zeroed ONLY on a fresh pick (never inside the
+  // handler), so an analyze-retry can't reset the cap into an unbounded loop.
   const [analyzeAttempts, setAnalyzeAttempts] = useState(0);
 
   // Sign-out can unmount us the instant a request resolves; guard post-await setState.
   const mounted = useRef(true);
+  // Synchronous single-flight latch (plan 0029): the merged tap does upload+analyze,
+  // so we gate on a ref — not async `status` — to make it idempotent under any render
+  // timing (no double upload / double OpenAI charge).
+  const inFlight = useRef(false);
   // Tracks the path currently in play so a late analyze result for a stale
   // (re-picked / re-uploaded) photo is ignored.
   const currentPath = useRef<string | null>(null);
@@ -135,11 +150,9 @@ export function CaptureScreen() {
     void deleteMealPhoto(prior);
   }
 
-  /** Clear all analyze-side state (on fresh pick / new upload / choose another). */
+  /** Clear all analyze-side state (fresh pick / choose another ONLY — never mid-handler). */
   function resetAnalyze() {
     setAnalysis(null);
-    setAnalyzeError(undefined);
-    setAnalyzeCanRetry(false);
     setAnalyzeAttempts(0);
     setNote('');
   }
@@ -147,8 +160,7 @@ export function CaptureScreen() {
   function applyPickOutcome(outcome: PickOutcome) {
     if (outcome.status === 'cancelled') return; // silent no-op (not an error).
     if (outcome.status === 'denied') {
-      setErrorMessage(deniedCopy(outcome.source));
-      setCanRetry(false);
+      setError({ message: deniedCopy(outcome.source), canRetry: false, phase: 'upload' });
       return;
     }
     // Fresh pick → reset any prior result/error and preview the new photo.
@@ -157,8 +169,7 @@ export function CaptureScreen() {
     setPhoto(outcome.photo);
     setUploadedPath(null);
     currentPath.current = null;
-    setErrorMessage(undefined);
-    setCanRetry(false);
+    setError(null);
     resetAnalyze();
   }
 
@@ -170,63 +181,86 @@ export function CaptureScreen() {
     applyPickOutcome(await pickFromLibrary());
   }
 
-  async function handleUpload() {
-    if (!photo || uploading) return;
-    setUploading(true);
-    setErrorMessage(undefined);
-    setCanRetry(false);
-    resetAnalyze();
+  /**
+   * The single "Analyze meal" action (plan 0029): upload the photo (only if not
+   * already uploaded — a failed-analyze retry reuses the object), then analyze it.
+   * `inFlight` (a synchronous ref) makes it idempotent under any render timing; the
+   * note is snapshotted once so no mid-flight state change can empty it; the analyze
+   * step runs against the LOCAL resolved `path`, never the async `uploadedPath` state.
+   */
+  async function handleAnalyzeMeal() {
+    if (!photo || inFlight.current) return;
+    // Bounded paid spend: once the analyze budget is spent on the uploaded photo,
+    // the only way forward is a re-pick — don't keep charging OpenAI.
+    if (uploadedPath && analyzeAttempts >= MAX_ANALYZE_ATTEMPTS) return;
 
-    const result = await uploadMealPhoto({ photo });
-
-    if (!mounted.current) return;
-    if (result.ok) {
-      currentPath.current = result.path;
-      setUploadedPath(result.path);
-      setUploading(false);
-      return;
-    }
-    const { message, canRetry: retryable } = uploadErrorCopy(result.kind);
-    setErrorMessage(message);
-    setCanRetry(retryable);
-    setUploading(false);
-  }
-
-  async function handleAnalyze() {
-    if (!uploadedPath || analyzing) return; // no double Gemini charge.
-    const path = uploadedPath;
-    const trimmedNote = note.trim();
+    inFlight.current = true;
+    const trimmedNote = note.trim(); // snapshot BEFORE any await (B1: never wiped mid-flight).
     const sentNote = trimmedNote.length > 0;
-    setAnalyzing(true);
-    setAnalyzeError(undefined);
-    setAnalyzeCanRetry(false);
+    try {
+      // --- Upload step (skipped when the photo is already uploaded) ---------
+      let path = uploadedPath;
+      if (!path) {
+        setStatus('uploading');
+        setError(null);
+        const up = await uploadMealPhoto({ photo });
+        if (!mounted.current) return;
+        if (!up.ok) {
+          const { message, canRetry } = uploadErrorCopy(up.kind);
+          setError({ message, canRetry, phase: 'upload' });
+          setStatus('idle');
+          return;
+        }
+        path = up.path;
+        currentPath.current = path;
+        setUploadedPath(path);
+      }
 
-    const result = await analyzeMeal({ path, note: trimmedNote });
+      // --- Analyze step ----------------------------------------------------
+      setStatus('analyzing');
+      setError(null);
+      const result = await analyzeMeal({ path, note: trimmedNote });
 
-    if (!mounted.current) return;
-    if (currentPath.current !== path) return; // re-pick race: ignore stale result.
+      if (!mounted.current) return;
+      if (currentPath.current !== path) return; // re-pick race: ignore stale result.
 
-    if (result.ok) {
-      setAnalysis(result.analysis);
-      setAnalyzing(false);
-      return;
+      if (result.ok) {
+        setAnalysis(result.analysis);
+        setStatus('idle');
+        return;
+      }
+      const { message, canRetry } = analyzeErrorCopy(result.kind);
+      const nextAttempts = analyzeAttempts + 1;
+      setAnalyzeAttempts(nextAttempts);
+      // Even a transient kind stops being retryable once the bounded budget is spent.
+      const retryable = canRetry && nextAttempts < MAX_ANALYZE_ATTEMPTS;
+      // SF3: a note can deterministically re-trip a content_filter/refusal on every
+      // Retry, so when a note was sent the terminal guidance points at the note (it's
+      // on-screen + re-enabled), not only "re-take the photo".
+      const terminalHint = sentNote
+        ? ' If it keeps failing, try editing or removing your note, or re-take the photo.'
+        : ' If it keeps failing, re-take the photo.';
+      setError({
+        message:
+          canRetry && nextAttempts >= MAX_ANALYZE_ATTEMPTS ? `${message}${terminalHint}` : message,
+        canRetry: retryable,
+        phase: 'analyze',
+      });
+      setStatus('idle');
+    } finally {
+      inFlight.current = false;
     }
-    const { message, canRetry: retryable } = analyzeErrorCopy(result.kind);
-    const nextAttempts = analyzeAttempts + 1;
-    setAnalyzeAttempts(nextAttempts);
-    // Even a transient kind stops being retryable once the bounded budget is spent.
-    setAnalyzeCanRetry(retryable && nextAttempts < MAX_ANALYZE_ATTEMPTS);
-    // SF3: a note can deterministically re-trip a content_filter/refusal on every
-    // Retry, so when a note was sent the terminal guidance points at the note (it's
-    // on-screen + re-enabled), not only "re-take the photo".
-    const terminalHint = sentNote
-      ? ' If it keeps failing, try editing or removing your note, or re-take the photo.'
-      : ' If it keeps failing, re-take the photo.';
-    setAnalyzeError(
-      retryable && nextAttempts >= MAX_ANALYZE_ATTEMPTS ? `${message}${terminalHint}` : message,
-    );
-    setAnalyzing(false);
   }
+
+  // Phase-specific button label (plan 0029): retryable errors name their phase, else
+  // the default action. A non-retryable error disables the button (steer to re-pick).
+  const primaryLabel =
+    error?.canRetry && error.phase === 'upload'
+      ? 'Retry upload'
+      : error?.canRetry && error.phase === 'analyze'
+        ? 'Retry analysis'
+        : 'Analyze meal';
+  const primaryDisabled = busy || (!!error && !error.canRetry);
 
   function chooseAnother() {
     // Also the post-save reset (onLogAnother). The savedPath guard makes this a
@@ -235,8 +269,7 @@ export function CaptureScreen() {
     setPhoto(null);
     setUploadedPath(null);
     currentPath.current = null;
-    setErrorMessage(undefined);
-    setCanRetry(false);
+    setError(null);
     resetAnalyze();
   }
 
@@ -251,20 +284,15 @@ export function CaptureScreen() {
 
       {/* Pick source ------------------------------------------------------- */}
       <Card style={styles.section}>
-        <Button onPress={handleTake} disabled={uploading || analyzing} fullWidth>
+        <Button onPress={handleTake} disabled={busy} fullWidth>
           Take photo
         </Button>
-        <Button
-          variant="secondary"
-          onPress={handleLibrary}
-          disabled={uploading || analyzing}
-          fullWidth
-        >
+        <Button variant="secondary" onPress={handleLibrary} disabled={busy} fullWidth>
           Choose from library
         </Button>
       </Card>
 
-      {/* Preview + upload + analyze --------------------------------------- */}
+      {/* Preview + single "Analyze meal" (upload+analyze in one tap, plan 0029) - */}
       {photo ? (
         <Card style={styles.section}>
           <Text type="subtitle">Preview</Text>
@@ -275,9 +303,9 @@ export function CaptureScreen() {
             transition={150}
           />
 
-          {/* Point-of-processing notice (plan 0010): the photo leaves the device
-              at Upload (→ Supabase) and again at Analyze (→ OpenAI). Show it
-              while a photo is selected and not yet saved; hide once MealReview is up. */}
+          {/* Point-of-processing notice (plan 0010): a single "Analyze meal" tap sends
+              the photo + any note off-device (→ Supabase Storage, then → OpenAI via the
+              Edge Function). Shown while a photo is selected and not yet saved. */}
           {!analysis ? (
             <Text type="small" themeColor="textSecondary">
               Your photo and any note you add are sent to OpenAI to estimate nutrition.{' '}
@@ -287,80 +315,65 @@ export function CaptureScreen() {
             </Text>
           ) : null}
 
-          {uploadedPath ? (
-            <>
-              <Text type="small" themeColor="textSecondary">
-                Uploaded ✓
-              </Text>
-
-              {analysis ? (
-                <MealReview
-                  key={uploadedPath ?? 'none'}
-                  analysis={analysis}
-                  imagePath={uploadedPath}
-                  initialNote={note}
-                  onLogAnother={chooseAnother}
-                  onSaving={(path) => {
-                    savedPath.current = path;
-                  }}
-                />
-              ) : (
-                <>
-                  {/* Optional note (plan 0020): influences the estimate and is
-                      authoritative on conflict; seeds the editable review form. */}
-                  <Input
-                    label="Add a note (optional)"
-                    value={note}
-                    onChangeText={setNote}
-                    placeholder="e.g. fried in butter, 2 cups of rice"
-                    hint={`${[...note].length}/${NOTE_MAX}`}
-                    autoCapitalize="sentences"
-                    multiline
-                    maxLength={NOTE_MAX}
-                    editable={!analyzing}
-                    style={styles.noteInput}
-                  />
-                  {analyzeError ? (
-                    <Text type="small" themeColor="danger">
-                      {analyzeError}
-                    </Text>
-                  ) : null}
-                  <Button onPress={handleAnalyze} loading={analyzing} fullWidth>
-                    {analyzeCanRetry ? 'Retry analysis' : 'Analyze meal'}
-                  </Button>
-                </>
-              )}
-
-              <Button
-                variant="secondary"
-                onPress={chooseAnother}
-                disabled={analyzing}
-                fullWidth
-              >
-                Choose another
-              </Button>
-            </>
+          {analysis ? (
+            <MealReview
+              key={uploadedPath ?? 'none'}
+              analysis={analysis}
+              imagePath={uploadedPath ?? ''}
+              initialNote={note}
+              onLogAnother={chooseAnother}
+              onSaving={(path) => {
+                savedPath.current = path;
+              }}
+            />
           ) : (
             <>
-              {errorMessage ? (
+              {/* Optional note (plan 0020): influences the estimate and is
+                  authoritative on conflict; seeds the editable review form. */}
+              <Input
+                label="Add a note (optional)"
+                value={note}
+                onChangeText={setNote}
+                placeholder="e.g. fried in butter, 2 cups of rice"
+                hint={`${[...note].length}/${NOTE_MAX}`}
+                autoCapitalize="sentences"
+                multiline
+                maxLength={NOTE_MAX}
+                editable={!busy}
+                style={styles.noteInput}
+              />
+              {error ? (
                 <Text type="small" themeColor="danger">
-                  {errorMessage}
+                  {error.message}
                 </Text>
               ) : null}
-              <Button onPress={handleUpload} loading={uploading} fullWidth>
-                {canRetry ? 'Retry upload' : 'Upload'}
+              <Button
+                onPress={handleAnalyzeMeal}
+                loading={busy}
+                disabled={primaryDisabled}
+                fullWidth
+              >
+                {primaryLabel}
               </Button>
-              <Button variant="secondary" onPress={chooseAnother} disabled={uploading} fullWidth>
-                Choose another
-              </Button>
+              {/* The single tap can run ~upload then ~analyze; name the current phase
+                  so a long wait doesn't read as a hang. */}
+              {busy ? (
+                <Text type="small" themeColor="textSecondary" style={styles.phase}>
+                  {status === 'uploading' ? 'Uploading…' : 'Analyzing…'}
+                </Text>
+              ) : null}
             </>
           )}
+
+          <Button variant="secondary" onPress={chooseAnother} disabled={busy} fullWidth>
+            Choose another
+          </Button>
         </Card>
-      ) : errorMessage ? (
+      ) : error ? (
         // A denial (no photo picked) still needs to surface its hint.
         <Card style={styles.section}>
           <Text type="small" themeColor="danger">
-            {errorMessage}
+            {error.message}
           </Text>
         </Card>
       ) : null}
@@ -385,5 +398,8 @@ const styles = StyleSheet.create({
   noteInput: {
     minHeight: 88,
     textAlignVertical: 'top',
+  },
+  phase: {
+    textAlign: 'center',
   },
 });
