@@ -112,6 +112,9 @@ export function DateField({ label, value, onChange, maximumDate, error }: DateFi
               mode="date"
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
               maximumDate={maximumDate}
+              // Tint the iOS calendar (selected day, arrows, highlights) with the app's
+              // brand green instead of the platform default blue.
+              accentColor={theme.primary}
               // v9 API: `onValueChange` (a day was picked) + `onDismiss` (closed) replace
               // the deprecated `onChange`. We only track the draft; commit is via "Done".
               onValueChange={(_event, picked) => {
