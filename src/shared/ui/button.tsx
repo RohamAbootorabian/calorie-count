@@ -14,7 +14,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 import { Text } from './text';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'success' | 'danger';
 
 export type ButtonProps = {
   children: ReactNode;
@@ -43,11 +43,34 @@ export function Button({
 
   const interactive = !disabled && !loading;
 
-  // Per-variant colors.
+  // Per-variant colors. `success`/`danger` are solid-fill CTAs whose tokens are
+  // tuned for WHITE text in both themes (a distinct save-green and a strong red).
   const bg =
-    variant === 'primary' ? theme.primary : variant === 'secondary' ? theme.background : 'transparent';
-  const borderColor = variant === 'ghost' ? 'transparent' : variant === 'primary' ? theme.primary : theme.border;
-  const fg = variant === 'primary' ? theme.primaryText : theme.text;
+    variant === 'primary'
+      ? theme.primary
+      : variant === 'success'
+        ? theme.success
+        : variant === 'danger'
+          ? theme.dangerStrong
+          : variant === 'secondary'
+            ? theme.background
+            : 'transparent';
+  const borderColor =
+    variant === 'ghost'
+      ? 'transparent'
+      : variant === 'primary'
+        ? theme.primary
+        : variant === 'success'
+          ? theme.success
+          : variant === 'danger'
+            ? theme.dangerStrong
+            : theme.border;
+  const fg =
+    variant === 'primary'
+      ? theme.primaryText
+      : variant === 'success' || variant === 'danger'
+        ? '#FFFFFF'
+        : theme.text;
   // Disabled appearance: mute the foreground/border instead of a blanket opacity
   // (which barely reads on transparent ghost/secondary fills).
   const mutedFg = disabled ? theme.textSecondary : fg;

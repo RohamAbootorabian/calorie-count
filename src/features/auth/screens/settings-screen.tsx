@@ -529,7 +529,7 @@ export function SettingsScreen() {
           </Text>
         ) : null}
 
-        <Button onPress={handleSaveProfile} loading={profileSaving} fullWidth>
+        <Button onPress={handleSaveProfile} loading={profileSaving} variant="success" fullWidth>
           Save profile
         </Button>
       </Card>
@@ -613,7 +613,12 @@ export function SettingsScreen() {
               </Text>
             ) : null}
 
-            <Button onPress={handleSaveGoals} loading={goalsSaving} disabled={!computed} fullWidth>
+            <Button
+              onPress={handleSaveGoals}
+              loading={goalsSaving}
+              disabled={!computed}
+              variant="success"
+              fullWidth>
               Save goals
             </Button>
           </>
@@ -632,7 +637,7 @@ export function SettingsScreen() {
 
       {/* 4. Sign out ------------------------------------------------------- */}
       <Card style={styles.section}>
-        <Button variant="secondary" onPress={handleSignOut} fullWidth>
+        <Button variant="danger" onPress={handleSignOut} fullWidth>
           Sign out
         </Button>
       </Card>

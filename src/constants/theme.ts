@@ -18,7 +18,9 @@ export const Colors = {
     primary: '#2E7D32', // brand / CTA — calm green for a nutrition app
     primaryText: '#ffffff', // text/icon on top of `primary`
     border: '#D7DAE0', // hairline / input border
-    danger: '#D14343', // destructive / error
+    danger: '#D14343', // destructive / error (used for error TEXT on background)
+    success: '#1B5E20', // deep "confirm/save" green — distinct from the primary CTA green
+    dangerStrong: '#C62828', // solid red FILL for a destructive button (white text on top)
   },
   dark: {
     text: '#ffffff',
@@ -31,6 +33,8 @@ export const Colors = {
     primaryText: '#0A0A0A',
     border: '#34363B',
     danger: '#E5715F',
+    success: '#2E7D32', // deeper than the dark primary (#4CAF50) so Save stands out
+    dangerStrong: '#C62828', // solid red FILL (white text on top) in both themes
   },
 } as const;
 
