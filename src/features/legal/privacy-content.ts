@@ -20,7 +20,7 @@
 export const COMPANY_NAME = 'Heart Harmona';
 export const CONTACT_EMAIL = 'saba@heartharmona.com';
 /** Human-readable "last updated" shown at the top of the policy. */
-export const EFFECTIVE_DATE = 'June 23, 2026';
+export const EFFECTIVE_DATE = 'September 13, 2026';
 
 // --- Outbound references (open in a new tab / in-app browser) ---------------
 export const OPENAI_PRIVACY_URL = 'https://openai.com/policies/privacy-policy/';
@@ -47,12 +47,13 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
       'The details you enter to set your goals — age, sex, height, weight, activity level, and weight goal — and the daily calorie and macro targets we compute from them.',
       'The meal photos you capture, and the food items and nutrition estimates you review and save.',
       'Any optional note you write to describe a meal — stored on that meal so you can review and edit it later.',
+      'Any food allergies or sensitivities, and medical or physical conditions, you choose to enter in your profile — health information you provide so we can tailor your meal analysis.',
     ],
   },
   {
     heading: 'How your meal photos are analyzed',
     body: [
-      'When you analyze a meal, your photo, a short instruction, and any note you added are sent — through our own server, never directly from your phone — to OpenAI (the GPT-4o-mini vision model), which returns an estimate of the foods and their nutrition.',
+      'When you analyze a meal, your photo, a short instruction, any note you added, and — if you have declared them — your food allergies and medical conditions are sent — through our own server, never directly from your phone — to OpenAI (the GPT-4o-mini vision model), which returns an estimate of the foods and their nutrition and can flag likely allergen conflicts.',
       `As of ${EFFECTIVE_DATE}, OpenAI states that it does not use data submitted through its API to train its models. We can't control a third party's terms, so please review OpenAI's own privacy policy for the current details.`,
     ],
   },

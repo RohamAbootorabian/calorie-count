@@ -20,7 +20,8 @@
  * LOGGING DISCIPLINE: SAFE = error kind, status, coarse timing. FORBIDDEN =
  * path/uid, the Authorization header/JWT, photo bytes/base64, any signed URL,
  * the parsed MealAnalysis (health data), the user note (health-adjacent free
- * text, plan 0020), and the raw OpenAI response body.
+ * text, plan 0020), the profile HEALTH CONTEXT (declared allergies/conditions
+ * free text, plan 0031 — health PII), and the raw OpenAI response body.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -35,6 +36,7 @@ const MAX_BYTES = 10 * 1024 * 1024; // matches the bucket's 10 MB cap.
 const DOWNLOAD_TIMEOUT_MS = 15_000; // → `network`
 const AI_TIMEOUT_MS = 30_000; //      → `timeout` (client withTimeout is ~35 s)
 const DAILY_CAP = 50; // analyses per user per day (B6). Tune from real usage.
+const HEALTH_TIMEOUT_MS = 4_000; // best-effort profile health read (plan 0031); skip on stall.
 // SYNC-SET with the client `NOTE_MAX` (meal-form.ts) + the DB `meal_logs_note_len`
 // check (plan 0020). Deno can't import the client const, so it's mirrored here.
 const NOTE_MAX = 500;
@@ -80,6 +82,52 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIM
     return await Promise.race([p, t]);
   } finally {
     clearTimeout(timer!);
+  }
+}
+
+/**
+ * Best-effort declared health context (plan 0031). Reads the caller's own
+ * allergies/conditions via their RLS-scoped client and formats a compact string
+ * for the prompt — only from flags that are true with a non-empty note. Returns
+ * undefined on ANY failure/timeout/absence so analysis is never blocked. NEVER
+ * logs the row/value/error (health PII): the catch logs a static string only.
+ */
+async function buildHealthContext(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  uid: string,
+): Promise<string | undefined> {
+  try {
+    const q = supabase
+      .from("profiles")
+      .select("has_allergies, allergies_note, has_conditions, conditions_note")
+      .eq("id", uid)
+      .maybeSingle();
+    const res = await withTimeout(q, HEALTH_TIMEOUT_MS);
+    if (res === TIMEOUT) return undefined;
+    const { data, error } = res as {
+      data:
+        | {
+          has_allergies?: boolean;
+          allergies_note?: string | null;
+          has_conditions?: boolean;
+          conditions_note?: string | null;
+        }
+        | null;
+      error: unknown;
+    };
+    if (error || !data) return undefined;
+
+    const parts: string[] = [];
+    const allergies = data.has_allergies ? (data.allergies_note ?? "").trim() : "";
+    const conditions = data.has_conditions ? (data.conditions_note ?? "").trim() : "";
+    if (allergies) parts.push(`Food allergies / sensitivities: ${allergies}`);
+    if (conditions) parts.push(`Medical / physical conditions: ${conditions}`);
+    return parts.length > 0 ? parts.join(". ") : undefined;
+  } catch {
+    // Static string ONLY — never the caught error, row, or value (health PII).
+    console.error("health-context fetch failed (best-effort; skipped)");
+    return undefined;
   }
 }
 
@@ -166,6 +214,15 @@ Deno.serve(async (req) => {
     // NULL → already at/over the cap (the rpc didn't increment).
     if (usageCount === null) return fail(origin, "rate_limited");
 
+    // --- Best-effort profile health context (plan 0031) -------------------
+    // Read the caller's declared allergies/conditions through their OWN RLS-scoped
+    // client (owner policy → only their row). STRICTLY best-effort: its own
+    // try/catch + timeout swallow ANY failure to "no context" so a profiles blip
+    // never fails an analysis that would otherwise succeed. Placed AFTER the cost
+    // guard so only requests that will hit OpenAI pay for it. NEVER logged (health
+    // PII): the catch logs a static string only, never the row/value/error object.
+    const healthContext = await buildHealthContext(supabase, uid);
+
     // --- Call OpenAI with its own abort-timeout (B4) ----------------------
     const base64 = encodeBase64(new Uint8Array(buffer));
     const controller = new AbortController();
@@ -178,6 +235,7 @@ Deno.serve(async (req) => {
         mimeType,
         signal: controller.signal,
         note,
+        healthContext,
       });
     } finally {
       clearTimeout(aiTimer);

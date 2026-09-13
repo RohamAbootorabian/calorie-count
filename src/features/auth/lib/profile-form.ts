@@ -27,6 +27,23 @@ export function normalizeDisplayName(raw: string): string | null {
 }
 
 /**
+ * Max length of a health note (allergies / conditions), in CODE POINTS — mirrors
+ * the `profiles.*_note` DB check and the `maxLength` on the note inputs (plan 0031).
+ */
+export const HEALTH_NOTE_MAX = 500;
+
+/**
+ * Coerce a health note (allergies / conditions) to its stored form: trim, STRIP
+ * control/null bytes (a pasted NUL would pass a length check yet break the
+ * text insert), empty → null. Shared by BOTH notes; never echoes the value (N4).
+ * `maxLength` on the input already caps length, so no length validator is needed.
+ */
+export function normalizeHealthNote(raw: string): string | null {
+  const cleaned = raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').trim();
+  return cleaned || null;
+}
+
+/**
  * The device's IANA timezone (e.g. "America/New_York"), or null if `Intl` is
  * unavailable / returns nothing (N3). Used by the "Use device timezone" heal
  * action; never throws.

@@ -48,7 +48,9 @@ import {
 } from '../lib/onboarding-form';
 import {
   getDeviceTimezone,
+  HEALTH_NOTE_MAX,
   normalizeDisplayName,
+  normalizeHealthNote,
   timezoneDisplay,
   validateDisplayName,
 } from '../lib/profile-form';
@@ -132,6 +134,14 @@ export function SettingsScreen() {
   const [profileError, setProfileError] = useState<string>();
   const [profileSaved, setProfileSaved] = useState(false);
 
+  // --- Health info (plan 0031) — allergies + conditions, default "no" ---------
+  // Notes are capped by the inputs' `maxLength` (no validator); a note is force-
+  // nulled on save when its flag is false (mirrors the DB gate constraint).
+  const [hasAllergies, setHasAllergies] = useState(false);
+  const [allergiesNote, setAllergiesNote] = useState('');
+  const [hasConditions, setHasConditions] = useState(false);
+  const [conditionsNote, setConditionsNote] = useState('');
+
   // Seed the profile form whenever a fresh row arrives (updated_at changes after a
   // save → re-seed with server truth; stable during editing so edits aren't clobbered).
   const seededProfileAt = useRef<string | null>(null);
@@ -141,6 +151,10 @@ export function SettingsScreen() {
     setDisplayName(profile.display_name ?? '');
     setUnits(profile.units === 'imperial' ? 'imperial' : 'metric');
     setTimezone(profile.timezone ?? null);
+    setHasAllergies(profile.has_allergies ?? false);
+    setAllergiesNote(profile.allergies_note ?? '');
+    setHasConditions(profile.has_conditions ?? false);
+    setConditionsNote(profile.conditions_note ?? '');
   }, [profile]);
 
   // --- Goals section state ---------------------------------------------------
@@ -236,6 +250,32 @@ export function SettingsScreen() {
     setProfileSaved(false);
   }
 
+  // Health handlers (plan 0031). Each edit clears the saved/error banner so it
+  // never lingers while editing. Selecting "No" also clears that note in state so
+  // a stale note can't flash back or be re-saved before the next re-seed.
+  function selectHasAllergies(next: boolean) {
+    setHasAllergies(next);
+    if (!next) setAllergiesNote('');
+    setProfileError(undefined);
+    setProfileSaved(false);
+  }
+  function changeAllergiesNote(text: string) {
+    setAllergiesNote(text);
+    setProfileError(undefined);
+    setProfileSaved(false);
+  }
+  function selectHasConditions(next: boolean) {
+    setHasConditions(next);
+    if (!next) setConditionsNote('');
+    setProfileError(undefined);
+    setProfileSaved(false);
+  }
+  function changeConditionsNote(text: string) {
+    setConditionsNote(text);
+    setProfileError(undefined);
+    setProfileSaved(false);
+  }
+
   function changeUnits(next: Units) {
     if (next === units) return;
     setUnits(next); // re-labels + re-derives the goals editor's displayed values live.
@@ -278,6 +318,12 @@ export function SettingsScreen() {
       id: user.id,
       display_name: normalizeDisplayName(displayName),
       units,
+      // Health (plan 0031): a note is persisted only behind its flag; false → null
+      // (matches the DB gate constraint, so no stale health text lingers at rest).
+      has_allergies: hasAllergies,
+      allergies_note: hasAllergies ? normalizeHealthNote(allergiesNote) : null,
+      has_conditions: hasConditions,
+      conditions_note: hasConditions ? normalizeHealthNote(conditionsNote) : null,
     };
     if (timezone) payload.timezone = timezone;
 
@@ -420,6 +466,7 @@ export function SettingsScreen() {
           autoCapitalize="words"
           error={nameError}
           editable={!profileLoading}
+          textAlign="center"
         />
 
         <View style={styles.group}>
@@ -446,6 +493,31 @@ export function SettingsScreen() {
             Use device timezone
           </Button>
         </View>
+
+        {/* Health info (plan 0031): two questions, default No; a note box appears on
+            Yes. Fed to the meal-analysis AI (server-side) to flag allergen conflicts. */}
+        <HealthQuestion
+          label="Food allergies or sensitivities"
+          noLabel="No food allergies"
+          yesLabel="I have food allergies"
+          notePlaceholder="e.g. peanuts, shellfish, lactose"
+          value={hasAllergies}
+          onSelect={selectHasAllergies}
+          note={allergiesNote}
+          onChangeNote={changeAllergiesNote}
+          disabled={profileLoading}
+        />
+        <HealthQuestion
+          label="Medical or physical conditions"
+          noLabel="No conditions"
+          yesLabel="I have a condition"
+          notePlaceholder="e.g. diabetes, high blood pressure"
+          value={hasConditions}
+          onSelect={selectHasConditions}
+          note={conditionsNote}
+          onChangeNote={changeConditionsNote}
+          disabled={profileLoading}
+        />
 
         {profileError ? (
           <Text type="small" themeColor="danger">
@@ -487,6 +559,7 @@ export function SettingsScreen() {
               keyboardType="number-pad"
               inputMode="numeric"
               error={goalErrors.age}
+              textAlign="center"
             />
             <SelectGroup
               label="Sex"
@@ -502,6 +575,7 @@ export function SettingsScreen() {
               keyboardType="decimal-pad"
               inputMode="decimal"
               error={goalErrors.height}
+              textAlign="center"
             />
             <Input
               label={units === 'imperial' ? 'Weight (lb)' : 'Weight (kg)'}
@@ -510,6 +584,7 @@ export function SettingsScreen() {
               keyboardType="decimal-pad"
               inputMode="decimal"
               error={goalErrors.weight}
+              textAlign="center"
             />
             <SelectGroup
               label="How active are you?"
@@ -610,6 +685,61 @@ function SelectGroup<T extends string>({
   );
 }
 
+/**
+ * One health question (plan 0031): a No/Yes selector (default No, built on the same
+ * Button rows as SelectGroup) that reveals a centered multiline note on Yes. The note
+ * is length-capped by `maxLength` (mirrors the DB check), so there's no validator.
+ */
+function HealthQuestion({
+  label,
+  noLabel,
+  yesLabel,
+  notePlaceholder,
+  value,
+  onSelect,
+  note,
+  onChangeNote,
+  disabled,
+}: {
+  label: string;
+  noLabel: string;
+  yesLabel: string;
+  notePlaceholder: string;
+  value: boolean;
+  onSelect: (next: boolean) => void;
+  note: string;
+  onChangeNote: (text: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <View style={styles.group}>
+      <Text type="smallBold" themeColor="textSecondary">
+        {label}
+      </Text>
+      <Button variant={!value ? 'primary' : 'secondary'} onPress={() => onSelect(false)} fullWidth>
+        {noLabel}
+      </Button>
+      <Button variant={value ? 'primary' : 'secondary'} onPress={() => onSelect(true)} fullWidth>
+        {yesLabel}
+      </Button>
+      {value ? (
+        <Input
+          value={note}
+          onChangeText={onChangeNote}
+          placeholder={notePlaceholder}
+          hint={`${[...note].length}/${HEALTH_NOTE_MAX}`}
+          autoCapitalize="sentences"
+          multiline
+          maxLength={HEALTH_NOTE_MAX}
+          editable={!disabled}
+          textAlign="center"
+          style={styles.healthNote}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 /** Live recomputed targets + the clamp note when floored (N5). */
 function GoalsReview({ computed }: { computed: ComputedGoals | undefined }) {
   if (!computed) {
@@ -671,5 +801,9 @@ const styles = StyleSheet.create({
   reviewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+  },
+  healthNote: {
+    minHeight: 88,
+    textAlignVertical: 'top',
   },
 });

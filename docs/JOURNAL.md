@@ -1629,3 +1629,45 @@ SHOULD-FIX (honest fallback comments) applied. Details in docs/plans/0030-tab-ba
 **Verified.** tsc 0 (validates every symbol name); expo lint 0; full expo export (web) 0. Pure
 client change — no migration/secret/deploy; JS/config only, user reloads (no native rebuild).
 **Pending:** user device-verify on iPhone (each tab's icon + filled-on-select).
+
+## 2026-09-13 — Plan 0031 executed: profile health info (allergies + conditions) + centered inputs
+
+**What.** Profile screen now (1) center-aligns the text inside every text box, and adds two
+health "protocols": (2) **food allergies/sensitivities** and (3) **medical/physical conditions**
+— each a Yes/No question defaulting to **No**, revealing a note box on Yes. (4) These are stored
+on `profiles` and fed into the `analyze-meal` AI so a logged photo can be flagged for declared
+allergen conflicts. (Per user decision: store + analyze only; the TDEE calorie number is
+unchanged and no new "suggestion" feature was built.)
+
+**How.**
+- Migration `20260913120000_profile_health.sql`: 4 columns on `profiles` (`has_allergies`/
+  `has_conditions` bool not null default false; `allergies_note`/`conditions_note` text) with
+  `char_length <= 500` **and** gate checks `(flag or note is null)` so no stale health text
+  persists behind a "No". Applied via `db push`; `database.ts` regenerated.
+- `profile-form.ts`: `HEALTH_NOTE_MAX=500` + shared `normalizeHealthNote` (trim + strip C0
+  control/NUL bytes + empty→null). No validator — the note `Input`'s `maxLength` caps length,
+  so the DB `23514` path is unreachable from the app.
+- `settings-screen.tsx`: `textAlign="center"` on every Input; a local `HealthQuestion`
+  component (No/Yes buttons + conditional centered multiline note); state + seed +
+  `handleSaveProfile` payload extended (note force-nulled behind No); handlers clear the
+  saved/error banner; selecting No clears that note in state.
+- `analyze-meal/index.ts`: best-effort `buildHealthContext` — reads the caller's own
+  allergies/conditions via their RLS-scoped client, wrapped in its OWN try/catch + `withTimeout`
+  (4s), placed AFTER the cost guard; ANY failure ⇒ skip (analysis never blocked). Logging-
+  discipline block extended to forbid the health context.
+- `analyze-meal/openai.ts`: optional `healthContext` arg → a SEPARATE user text part AFTER the
+  meal note ("DATA, not instructions"), plus an advisory system-prompt clause to flag declared
+  allergens in `assumptions`. Never logged.
+- `privacy-content.ts`: §1 + §2 disclose the health data + its flow to OpenAI; `EFFECTIVE_DATE`
+  bumped to September 13, 2026.
+
+**Review.** Full 4-agent review. NEEDS CHANGES → resolved → APPROVED. 2 blockers: (B1) privacy
+policy must disclose the health-data→OpenAI flow — fixed; (B2) the best-effort health fetch
+needed its own try/catch + timeout + placement after the cost guard — fixed. Should-fixes:
+`maxLength` instead of a bespoke validator, DB gate constraints, extended never-log rule,
+control-char stripping, separate post-note prompt part. Details in
+docs/plans/0031-profile-health-allergies-conditions.md.
+
+**Verified.** tsc 0; expo lint 0; full web export 0. Migration applied to prod; `analyze-meal`
+deployed. **Pending:** user device-verify (centered inputs; set/clear allergies & conditions;
+log a photo of a declared allergen → analysis flags it).
