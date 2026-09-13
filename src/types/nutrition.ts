@@ -60,6 +60,13 @@ export interface MealAnalysis {
   quality?: QualityScore;
   /** Anything the user should confirm, e.g. "Assumed cooked in oil". */
   assumptions?: string[];
+  /**
+   * Allergen conflict warnings (plan 0032) — populated only when the meal likely
+   * contains one of the user's DECLARED allergies (plan 0031). Shown as a red
+   * warning at review time; kept SEPARATE from `assumptions`. Review-time only —
+   * intentionally not persisted to `meal_logs`.
+   */
+  allergenWarnings?: string[];
 }
 
 /** A logged meal: the analysis plus storage/tracking metadata. */

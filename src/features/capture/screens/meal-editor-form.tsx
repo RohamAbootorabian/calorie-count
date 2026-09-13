@@ -60,6 +60,22 @@ export function MealEditorForm({
         {form.quality ? ` · Quality ${Math.round(form.quality.score)}/100` : ''}
       </Text>
 
+      {/* Allergen warnings (plan 0032): a RED, top-of-form safety cue when the meal
+          likely conflicts with a declared allergy. ⚠️ prefix (not color alone) for
+          accessibility. Review-time only — absent on a History edit (not persisted). */}
+      {form.allergenWarnings && form.allergenWarnings.length > 0 ? (
+        <View
+          style={styles.allergenBlock}
+          accessibilityRole="alert"
+          accessibilityLabel={`Allergen warning: ${form.allergenWarnings.join('. ')}`}>
+          {form.allergenWarnings.map((w, i) => (
+            <Text key={i} type="smallBold" themeColor="danger">
+              ⚠️ {w}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
       <Input
         label="Dish name"
         value={form.dishName}
@@ -227,6 +243,9 @@ const styles = StyleSheet.create({
   noteInput: {
     minHeight: 88,
     textAlignVertical: 'top',
+  },
+  allergenBlock: {
+    gap: Spacing.one,
   },
   itemCard: {
     gap: Spacing.two,

@@ -1671,3 +1671,33 @@ docs/plans/0031-profile-health-allergies-conditions.md.
 **Verified.** tsc 0; expo lint 0; full web export 0. Migration applied to prod; `analyze-meal`
 deployed. **Pending:** user device-verify (centered inputs; set/clear allergies & conditions;
 log a photo of a declared allergen → analysis flags it).
+
+## 2026-09-13 — Plan 0032 executed: red allergen warning in the meal analysis result
+
+**What.** When the analyzed meal likely contains one of the user's declared allergies (plan
+0031), the review card now shows a distinct **red** "⚠️ May contain …" warning near the top —
+separate from the gray assumptions.
+
+**Why.** 0031 folded allergen flags into `assumptions` (gray, easy to miss). The user wanted a
+recognizable red safety cue at analysis time.
+
+**How.** Dedicated `allergenWarnings: string[]` (not folded into assumptions):
+- `meal-analysis.ts`: field on the interface + `coerceStrArray` (attach when non-empty) + added
+  to `OPENAI_RESPONSE_SCHEMA` properties AND required (strict structured output needs both; `[]`
+  = no conflict).
+- `openai.ts`: REPLACED the old "add an allergen assumption" line with an `allergenWarnings`-only
+  instruction, anchored to allergens visible/described AS AN INGREDIENT (no speculative trace/
+  cross-contamination), no duplication in assumptions; kept the medical-conditions clause.
+- `nutrition.ts` + `meal-form.ts`: optional field; seeded in `seedFormFromAnalysis`; explicit
+  "intentionally not seeded" comment in `seedFormFromMealLog`; NOT persisted (no DB/RPC change).
+- `meal-editor-form.tsx`: red ⚠️ block (accessibilityRole="alert", not color-only) right under
+  the Confidence/Quality line.
+
+**Review.** Two focused reviewers. APPROVED, no blockers. Resolved SHOULD-FIXes: replace-not-
+append the prompt line; anchor warnings to visible ingredients; top placement; mandatory ⚠️.
+Review-time-only (no red line on a History edit) is a deliberate, documented decision. Details in
+docs/plans/0032-allergen-warning-red.md.
+
+**Verified.** tsc 0; expo lint 0; full web export 0; `analyze-meal` deployed.
+**Pending:** user device-verify (declared peanut allergy → analyze a peanut dish → red warning;
+non-conflicting dish → none). Server + client change; a Reload picks it up (no rebuild).

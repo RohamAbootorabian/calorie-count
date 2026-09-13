@@ -45,6 +45,8 @@ export interface MealAnalysis {
   confidence: Confidence;
   quality?: QualityScore;
   assumptions?: string[];
+  /** Allergen conflict warnings vs. the user's declared allergies (plan 0032). */
+  allergenWarnings?: string[];
 }
 
 // --- Clamp limits — pinned to the DB CHECK constraints (migration literals). --
@@ -173,6 +175,7 @@ export function coerceMealAnalysis(raw: unknown): MealAnalysis {
   }
 
   const assumptions = coerceStrArray(obj.assumptions, MAX_ASSUMPTIONS);
+  const allergenWarnings = coerceStrArray(obj.allergenWarnings, MAX_ASSUMPTIONS);
 
   const analysis: MealAnalysis = {
     dishName,
@@ -182,6 +185,7 @@ export function coerceMealAnalysis(raw: unknown): MealAnalysis {
   };
   if (quality) analysis.quality = quality;
   if (assumptions.length > 0) analysis.assumptions = assumptions;
+  if (allergenWarnings.length > 0) analysis.allergenWarnings = allergenWarnings;
   return analysis;
 }
 
@@ -253,6 +257,9 @@ export const OPENAI_RESPONSE_SCHEMA = {
       required: ["score", "factors"],
     },
     assumptions: { type: "array", items: { type: "string" } },
+    // Non-nullable array (like `assumptions`): `[]` means "no conflict". Strict
+    // structured output requires it in BOTH `properties` and `required` (plan 0032).
+    allergenWarnings: { type: "array", items: { type: "string" } },
   },
-  required: ["dishName", "confidence", "items", "quality", "assumptions"],
+  required: ["dishName", "confidence", "items", "quality", "assumptions", "allergenWarnings"],
 } as const;

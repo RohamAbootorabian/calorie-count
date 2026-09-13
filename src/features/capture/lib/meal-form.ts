@@ -71,6 +71,11 @@ export type MealForm = {
   confidence: Confidence;
   quality?: { score: number; factors: string[] };
   assumptions?: string[];
+  /**
+   * Allergen conflict warnings (plan 0032) — shown RED at review. Review-time only:
+   * seeded from the fresh analysis, NOT persisted, so it's absent on a History edit.
+   */
+  allergenWarnings?: string[];
   /** Optional user note (plan 0020) — user input, not AI output; editable + saved. */
   note: string;
   /** The meal's date (plan 0028). A `Date` (not a string): the native picker + `maximumDate`
@@ -98,6 +103,7 @@ export function seedFormFromAnalysis(analysis: MealAnalysis, initialNote = ''): 
       ? { score: analysis.quality.score, factors: analysis.quality.factors }
       : undefined,
     assumptions: analysis.assumptions,
+    allergenWarnings: analysis.allergenWarnings, // review-time only (plan 0032).
     note: initialNote,
     eatenAt: new Date(), // a new meal defaults to today (plan 0028).
     items: analysis.items.map((item, i) => ({
@@ -166,6 +172,8 @@ export function seedFormFromMealLog(log: StoredMealLog, items: StoredMealItem[])
         ? { score: log.quality_score, factors: log.quality_factors ?? [] }
         : undefined,
     assumptions: log.assumptions ?? undefined,
+    // `allergenWarnings` is INTENTIONALLY not seeded here (plan 0032): it's a
+    // review-time-only safety cue, never persisted — so a History edit shows none.
     note: log.note ?? '',
     eatenAt: new Date(log.eaten_at), // seed the stored date for editing (plan 0028).
     items: items.map((item, i) => ({
