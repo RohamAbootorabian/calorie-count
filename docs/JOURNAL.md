@@ -1605,3 +1605,27 @@ resolved → APPROVED. Full findings in docs/plans/0029-merge-upload-into-analyz
 **Verified.** tsc 0; expo lint 0; full expo export (web) 0. Pure client change — no migration,
 secret, or deploy; JS-only, user reloads.
 **Pending:** user device-verify (single-tap happy path + forced upload/analyze failures).
+
+## 2026-09-13 — Plan 0030 executed: meaningful tab-bar icons (SF Symbols)
+
+**What.** Home / History / Capture / Profile now show distinct, purpose-matching icons on the
+iPhone tab bar (they were three byte-identical copies of the old `explore` magnifier PNG, with
+no `history` asset at all).
+
+**Why.** Placeholder art made three of four tabs look identical and wrong.
+
+**How.** `app-tabs.tsx` only: added an `sf` (SF Symbol) prop to each `NativeTabs.Trigger.Icon`
+using the `{ default, selected }` form — Home `house`/`house.fill`, History
+`clock.arrow.circlepath` (no `.fill`, so stable on select — intended), Capture
+`camera`/`camera.fill`, Profile `person.crop.circle`/`person.crop.circle.fill`. On iOS `sf`
+overrides `src`, so the iPhone gets crisp system-tinted vectors; the existing `src` PNGs stay as
+the inert non-iOS (Android) fallback. No new assets authored.
+
+**Review.** Two focused reviewers (right-sized for a cosmetic change with a `tsc` correctness
+net). APPROVED, no blockers: verified the `{default,selected}` sf form exists in SDK 56's
+expo-router typings and all 7 symbol names are valid in `sf-symbols-typescript@2.2.0`. One
+SHOULD-FIX (honest fallback comments) applied. Details in docs/plans/0030-tab-bar-icons.md.
+
+**Verified.** tsc 0 (validates every symbol name); expo lint 0; full expo export (web) 0. Pure
+client change — no migration/secret/deploy; JS/config only, user reloads (no native rebuild).
+**Pending:** user device-verify on iPhone (each tab's icon + filled-on-select).
