@@ -1701,3 +1701,36 @@ docs/plans/0032-allergen-warning-red.md.
 **Verified.** tsc 0; expo lint 0; full web export 0; `analyze-meal` deployed.
 **Pending:** user device-verify (declared peanut allergy → analyze a peanut dish → red warning;
 non-conflicting dish → none). Server + client change; a Reload picks it up (no rebuild).
+
+## 2026-09-13 — Plan 0033 executed: History search (dish name) + date filter
+
+**What.** The History screen now has a pinned search box (matches dish name across the user's
+ENTIRE history, server-side) plus a date filter with quick presets (All / Today / 7 days /
+30 days) and a custom From–To range. Search + date combine.
+
+**Why.** As the meal list grows, finding a specific meal was hard.
+
+**How.**
+- `history-filter.ts` (new, pure): `escapeIlike` (escape `\` first then `%`/`_`, strip PostgREST's
+  `*`), `resolveRange` (device-local day-granular bounds; presets set only a lower bound with
+  `toIso=null`; custom = start-of-day … end-of-day with auto-swap), `filterKey`, `isFilterActive`.
+- `use-debounced-value.ts` (new): 300 ms debounce for the search term.
+- `use-meal-history.tsx`: now filter-driven (`.ilike` + `.gte/.lte` + order + limit); outcome keyed
+  to `(userId, reloadKey, filterKey)`; exposes `loading` (initial only) vs `refetching` (with data)
+  and keeps the last rows so the filter UI never blanks.
+- `history-screen.tsx`: pinned filter header (search Input + wrapping preset chips + conditional
+  From/To DateFields) ABOVE the FlatList; full-screen spinner only on initial load; inline refetch
+  spinner + inline error (header stays mounted); "no match" vs "no meals yet" empty states; footer
+  says "matching" under an active filter.
+
+**Review.** Three-agent review. NEEDS CHANGES → APPROVED. 3 blockers fixed: (B1) full-screen gate
+unmounting the search box → initial-vs-refetch split; (B2) `now` upper bound → unstable key →
+refetch loop → day-granular key + `toIso=null` presets; (B3) custom `to` → inclusive end-of-local-
+day. Should-fixes: primitive effect deps, `*` stripping, whitespace-only handling, auto-swap,
+inline error. Details in docs/plans/0033-history-search-filter.md.
+
+**Verified.** tsc 0; expo lint 0; full web export 0. Pure client change — no migration/secret/
+deploy; JS-only (reload). PRIVACY: the dish-name term is never logged/analytics'd (it does travel
+in the PostgREST request URL — unavoidable for server-side ilike).
+**Pending:** user device-verify (search an old >100th meal → appears; presets + custom range;
+combined; typing keeps keyboard/focus; clear restores full list).

@@ -1,22 +1,27 @@
 /**
- * Meal History screen (plan 0012). Lists the signed-in user's saved meals
- * (newest first) and lets them delete one — with confirmation.
+ * Meal History screen (plan 0012; search + date filter, plan 0033). Lists the
+ * signed-in user's saved meals (newest first), lets them delete one (with
+ * confirmation), and — new — search by dish name across ALL history + narrow by
+ * date (presets or a custom range).
  *
- * Delete is AWAIT-then-REFETCH (no optimistic rollback; plan 0012 review): mark
- * the id in-flight (gates the dialog AND the call, so a double-tap can't stack
- * two confirms), await `deleteMeal`, then `refetch()` on success or show a
- * non-PII inline message on failure (the row simply stays — nothing was removed
- * optimistically). A `mounted` ref drops a late setState if the screen unmounts
- * (e.g. sign-out mid-delete).
+ * FILTER UI STAYS MOUNTED (plan 0033 B1/B2): the full-screen spinner shows ONLY on
+ * the initial load; every later filter change flips the hook's `refetching` (not
+ * `loading`), so the pinned search box never unmounts mid-type (focus/keyboard
+ * kept). Errors while filtering render inline so the user can still clear the filter.
  *
- * Confirmation is cross-platform: native `Alert.alert`; web `window.confirm`
- * (RN's `Alert` is unreliable on web). Pull-to-refresh uses `RefreshControl`
- * (native); the always-present header Refresh button is the web refresh path
- * (RefreshControl can no-op on web).
+ * Delete is AWAIT-then-REFETCH (no optimistic rollback; plan 0012 review): mark the
+ * id in-flight (gates the dialog AND the call), await `deleteMeal`, then `refetch()`
+ * on success or show a non-PII inline message on failure. A `mounted` ref drops a
+ * late setState if the screen unmounts (e.g. sign-out mid-delete).
+ *
+ * Confirmation is cross-platform: native `Alert.alert`; web `window.confirm`.
+ * Pull-to-refresh uses `RefreshControl` (native); the header Refresh button is the
+ * web refresh path. PRIVACY: the search term is a dish name (health-adjacent) — never
+ * logged, never in analytics, never in a user-facing error string.
  */
 import { Image } from 'expo-image';
 import { router, useFocusEffect } from 'expo-router';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -32,15 +37,26 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BottomTabInset, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useUser } from '@/lib/auth';
-import { Button, Card, Text } from '@/shared/ui';
+import { Button, Card, DateField, Input, Text } from '@/shared/ui';
 
 import { deleteMeal } from '../lib/delete-meal';
+import { isFilterActive, type DatePreset, type HistoryFilter } from '../lib/history-filter';
+import { useDebouncedValue } from '../lib/use-debounced-value';
 import { HISTORY_LIMIT, useMealHistory, type MealCard } from '../lib/use-meal-history';
 import { useSignedThumbnails } from '../lib/use-signed-thumbnails';
 import { PhotoLightbox } from './photo-lightbox';
 
 /** Fixed thumbnail footprint — always reserved so the row height never jumps. */
 const THUMB_SIZE = 56;
+
+/** Date-filter presets shown as a wrapping chip row. */
+const PRESETS: { value: DatePreset; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'today', label: 'Today' },
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+  { value: 'custom', label: 'Custom' },
+];
 
 /** Short, locale-aware "when eaten" label, e.g. "Jun 24, 2:15 PM". */
 function formatEatenAt(iso: string): string {
@@ -59,21 +75,47 @@ function round(n: number): number {
 }
 
 export default function HistoryScreen() {
-  const { loading, meals, error, refetch } = useMealHistory();
-  const { urlFor, reportError } = useSignedThumbnails(meals);
   const insets = useSafeAreaInsets();
   const { user } = useUser();
   const userId = user?.id ?? null;
 
+  // --- Filter state (plan 0033) --------------------------------------------
+  const [search, setSearch] = useState('');
+  const [preset, setPreset] = useState<DatePreset>('all');
+  const [customFrom, setCustomFrom] = useState<Date | null>(null);
+  const [customTo, setCustomTo] = useState<Date | null>(null);
+  const debouncedSearch = useDebouncedValue(search, 300);
+
+  // The active filter passed to the hook (debounced term → one query per pause).
+  const filter = useMemo<HistoryFilter>(
+    () => ({ search: debouncedSearch, preset, from: customFrom, to: customTo }),
+    [debouncedSearch, preset, customFrom, customTo],
+  );
+  const filterActive = isFilterActive(filter);
+
+  const { loading, refetching, meals, error, refetch } = useMealHistory(filter);
+  const { urlFor, reportError } = useSignedThumbnails(meals);
+
+  function selectPreset(next: DatePreset) {
+    setPreset(next);
+    // Custom needs two non-null Dates (DateField.value is non-null); seed sensible
+    // defaults the first time (last 30 days) so both bounds always exist.
+    if (next === 'custom') {
+      if (!customFrom) {
+        const from = new Date();
+        from.setDate(from.getDate() - 29);
+        setCustomFrom(from);
+      }
+      if (!customTo) setCustomTo(new Date());
+    }
+  }
+
   // Ids whose delete is in flight — gates the confirm dialog AND the call.
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(new Set());
-  // True after a delete fails (transient/unknown) — a non-PII inline notice.
   const [deleteFailed, setDeleteFailed] = useState(false);
-  // The full-screen photo viewer (plan 0016), or null when closed. Holds the
-  // already-minted signed URL in memory only — never serialized into a route. KEYED
-  // to the `userId` it was opened for: a render-time guard (not an effect) hides it
-  // the instant the user changes, so a sign-out can't leave user A's signed URL on
-  // screen (mirrors useSignedThumbnails' userId-keyed map; "derive, don't effect").
+  // The full-screen photo viewer (plan 0016), or null. Holds the already-minted
+  // signed URL in memory only — never serialized into a route. KEYED to the `userId`
+  // it was opened for so a sign-out can't leave user A's signed URL on screen.
   const [lightbox, setLightbox] =
     useState<{ url: string; cacheKey: string; userId: string } | null>(null);
 
@@ -86,9 +128,7 @@ export default function HistoryScreen() {
   }, []);
 
   // Reflect edits made on the edit screen (plan 0015): refetch when this screen
-  // regains focus — but SKIP the very first focus (it coincides with the mount
-  // fetch in `useMealHistory`, so refetching would double-fire and flip
-  // `loading` mid-interaction). The mount fetch already has fresh data.
+  // regains focus — but SKIP the very first focus (it coincides with the mount fetch).
   const hadFirstFocus = useRef(false);
   useFocusEffect(
     useCallback(() => {
@@ -126,7 +166,6 @@ export default function HistoryScreen() {
       const title = 'Delete this meal?';
       const message = "This can't be undone.";
       if (Platform.OS === 'web') {
-        // RN Alert is unreliable on web; window.confirm returns a real boolean.
         const ok = typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`);
         if (ok) void doDelete(meal);
         return;
@@ -139,7 +178,7 @@ export default function HistoryScreen() {
     [deletingIds, doDelete],
   );
 
-  // --- Loading / error gates ------------------------------------------------
+  // --- Initial-load gates (filter UI not needed yet) ------------------------
   if (loading) {
     return (
       <Centered>
@@ -147,7 +186,8 @@ export default function HistoryScreen() {
       </Centered>
     );
   }
-  if (error) {
+  // Initial error with nothing to show and no filter to preserve → full-screen retry.
+  if (error && meals.length === 0 && !filterActive) {
     return (
       <Centered>
         <Text type="default" themeColor="textSecondary" style={styles.centerText}>
@@ -158,71 +198,68 @@ export default function HistoryScreen() {
     );
   }
 
-  // --- List -----------------------------------------------------------------
   const atLimit = meals.length >= HISTORY_LIMIT;
+
+  const filterHeader = (
+    <FilterHeader
+      insetTop={insets.top}
+      search={search}
+      onSearch={setSearch}
+      preset={preset}
+      onPreset={selectPreset}
+      customFrom={customFrom}
+      customTo={customTo}
+      onFrom={setCustomFrom}
+      onTo={setCustomTo}
+      refetching={refetching}
+      onRefresh={refetch}
+      error={error}
+      deleteFailed={deleteFailed}
+    />
+  );
 
   return (
     <>
-    <FlatListContainer
-      insetTop={insets.top}
-      data={meals}
-      refetch={refetch}
-      header={
-        <View style={styles.header}>
-          <Text type="subtitle">History</Text>
-          <Pressable onPress={refetch} accessibilityRole="button" hitSlop={Spacing.two}>
-            <Text type="link" themeColor="textSecondary">
-              Refresh
+      <FlatListContainer
+        pinned={filterHeader}
+        data={meals}
+        refetch={refetch}
+        footer={
+          atLimit ? (
+            <Text type="small" themeColor="textSecondary" style={styles.notice}>
+              Showing your {HISTORY_LIMIT} most recent {filterActive ? 'matching ' : ''}meals.
             </Text>
-          </Pressable>
-        </View>
-      }
-      subHeader={
-        <>
-          {deleteFailed && (
-            <Text type="small" themeColor="danger" style={styles.notice}>
-              Couldn&apos;t delete — try again.
+          ) : null
+        }
+        empty={
+          <View style={styles.empty}>
+            <Text type="default" themeColor="textSecondary" style={styles.centerText}>
+              {filterActive
+                ? 'No meals match your search or filters.'
+                : 'No meals logged yet — snap one from Capture.'}
             </Text>
-          )}
-        </>
-      }
-      footer={
-        atLimit ? (
-          <Text type="small" themeColor="textSecondary" style={styles.notice}>
-            Showing your {HISTORY_LIMIT} most recent meals.
-          </Text>
-        ) : null
-      }
-      empty={
-        <View style={styles.empty}>
-          <Text type="default" themeColor="textSecondary" style={styles.centerText}>
-            No meals logged yet — snap one from Capture.
-          </Text>
-        </View>
-      }
-      renderItem={(meal) => {
-        // Compute the signed URL ONCE; reuse it for both the thumbnail and the
-        // lightbox gate. `thumbUrl && path` narrows both to non-null, so the photo
-        // opens only when there's a real URL (placeholder rows stay inert).
-        const thumbUrl = urlFor(meal.image_path);
-        const path = meal.image_path;
-        return (
-          <MealRow
-            meal={meal}
-            thumbUrl={thumbUrl}
-            deleting={deletingIds.has(meal.id)}
-            onEdit={() => router.push({ pathname: '/meal-edit', params: { id: meal.id } })}
-            onPressPhoto={
-              thumbUrl && path && userId
-                ? () => setLightbox({ url: thumbUrl, cacheKey: path, userId })
-                : undefined
-            }
-            onDelete={() => confirmThenDelete(meal)}
-            onThumbError={reportError}
-          />
-        );
-      }}
-    />
+          </View>
+        }
+        renderItem={(meal) => {
+          const thumbUrl = urlFor(meal.image_path);
+          const path = meal.image_path;
+          return (
+            <MealRow
+              meal={meal}
+              thumbUrl={thumbUrl}
+              deleting={deletingIds.has(meal.id)}
+              onEdit={() => router.push({ pathname: '/meal-edit', params: { id: meal.id } })}
+              onPressPhoto={
+                thumbUrl && path && userId
+                  ? () => setLightbox({ url: thumbUrl, cacheKey: path, userId })
+                  : undefined
+              }
+              onDelete={() => confirmThenDelete(meal)}
+              onThumbError={reportError}
+            />
+          );
+        }}
+      />
       {lightbox && lightbox.userId === userId && (
         <PhotoLightbox
           url={lightbox.url}
@@ -245,23 +282,116 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
-type FlatListContainerProps = {
+/**
+ * Pinned filter block (search + presets + optional custom range) rendered ABOVE the
+ * FlatList (not in a scrolling header) so it never scrolls away or unmounts mid-type.
+ * Passed as a STABLE element — never `ListHeaderComponent={() => …}`.
+ */
+function FilterHeader({
+  insetTop,
+  search,
+  onSearch,
+  preset,
+  onPreset,
+  customFrom,
+  customTo,
+  onFrom,
+  onTo,
+  refetching,
+  onRefresh,
+  error,
+  deleteFailed,
+}: {
   insetTop: number;
+  search: string;
+  onSearch: (v: string) => void;
+  preset: DatePreset;
+  onPreset: (p: DatePreset) => void;
+  customFrom: Date | null;
+  customTo: Date | null;
+  onFrom: (d: Date) => void;
+  onTo: (d: Date) => void;
+  refetching: boolean;
+  onRefresh: () => void;
+  error: boolean;
+  deleteFailed: boolean;
+}) {
+  const today = new Date();
+  return (
+    <View style={[styles.filterWrap, { paddingTop: insetTop + Spacing.three }]}>
+      <View style={styles.header}>
+        <Text type="subtitle">History</Text>
+        <View style={styles.headerRight}>
+          {refetching ? <ActivityIndicator size="small" /> : null}
+          <Pressable onPress={onRefresh} accessibilityRole="button" hitSlop={Spacing.two}>
+            <Text type="link" themeColor="textSecondary">
+              Refresh
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+
+      <Input
+        value={search}
+        onChangeText={onSearch}
+        placeholder="Search by dish name"
+        autoCapitalize="none"
+        autoCorrect={false}
+        clearButtonMode="while-editing"
+        returnKeyType="search"
+      />
+
+      <View style={styles.chipRow}>
+        {PRESETS.map((p) => (
+          <Button
+            key={p.value}
+            variant={preset === p.value ? 'primary' : 'secondary'}
+            onPress={() => onPreset(p.value)}
+            style={styles.chip}>
+            {p.label}
+          </Button>
+        ))}
+      </View>
+
+      {preset === 'custom' ? (
+        <View style={styles.rangeRow}>
+          <DateField
+            label="From"
+            value={customFrom ?? today}
+            onChange={onFrom}
+            maximumDate={today}
+          />
+          <DateField label="To" value={customTo ?? today} onChange={onTo} maximumDate={today} />
+        </View>
+      ) : null}
+
+      {error ? (
+        <Text type="small" themeColor="danger" style={styles.notice}>
+          Couldn&apos;t load your meals — try again.
+        </Text>
+      ) : null}
+      {deleteFailed ? (
+        <Text type="small" themeColor="danger" style={styles.notice}>
+          Couldn&apos;t delete — try again.
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+type FlatListContainerProps = {
+  pinned: React.ReactElement;
   data: MealCard[];
   refetch: () => void;
-  header: React.ReactElement;
-  subHeader: React.ReactElement;
   footer: React.ReactElement | null;
   empty: React.ReactElement;
   renderItem: (meal: MealCard) => React.ReactElement;
 };
 
 function FlatListContainer({
-  insetTop,
+  pinned,
   data,
   refetch,
-  header,
-  subHeader,
   footer,
   empty,
   renderItem,
@@ -269,28 +399,21 @@ function FlatListContainer({
   const theme = useTheme();
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
+      {/* Pinned filter UI — outside the FlatList so it never scrolls away/unmounts. */}
+      <View style={styles.pinnedContainer}>{pinned}</View>
       <FlatList
         data={data}
         keyExtractor={(m) => m.id}
         renderItem={({ item }) => renderItem(item)}
-        ListHeaderComponent={
-          <View>
-            {header}
-            {subHeader}
-          </View>
-        }
         ListFooterComponent={footer}
         ListEmptyComponent={empty}
         ItemSeparatorComponent={() => <View style={{ height: Spacing.three }} />}
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.listContent,
-          {
-            paddingTop: insetTop + Spacing.three,
-            paddingBottom: BottomTabInset + Spacing.four,
-          },
+          { paddingTop: Spacing.three, paddingBottom: BottomTabInset + Spacing.four },
         ]}
         refreshControl={
-          // Pull-to-refresh on native; web uses the header Refresh button.
           Platform.OS === 'web' ? undefined : (
             <RefreshControl refreshing={false} onRefresh={refetch} />
           )
@@ -321,7 +444,6 @@ const MealRow = memo(function MealRow({
 }) {
   const thumbnail = (
     <Thumbnail
-      // Keyed to the photo so a changed image_path remounts → `errored` resets.
       key={meal.image_path ?? 'no-photo'}
       uri={thumbUrl}
       cacheKey={meal.image_path}
@@ -349,7 +471,6 @@ const MealRow = memo(function MealRow({
         {deleting ? (
           <ActivityIndicator />
         ) : (
-          // Hide both actions while a delete is in flight (the spinner replaces them).
           <View style={styles.rowActions}>
             <Pressable onPress={onEdit} accessibilityRole="button" hitSlop={Spacing.two}>
               <Text type="smallBold" themeColor="primary">
@@ -381,14 +502,9 @@ const MealRow = memo(function MealRow({
 });
 
 /**
- * Meal photo thumbnail (plan 0013). Always occupies a fixed 56×56 footprint so the
- * row height never jumps. Renders a flat themed placeholder tile when there's no
- * URL yet (null path / not-yet-minted / failed mint) or when the image errors
- * (e.g. a 404'd object) — and reports that error up so the path isn't re-signed.
- * The parent keys this component to `image_path`, so a changed photo remounts and
- * `errored` resets — a recycled row recovers without a setState-in-effect. `cacheKey`
- * keys expo-image's byte cache to the stable `image_path` (native), so the bytes
- * survive signed-URL rotation; web ignores it (browser caches by URL).
+ * Meal photo thumbnail (plan 0013). Fixed 56×56 footprint. Flat placeholder tile when
+ * there's no URL yet or the image errors — and reports that error up so the path isn't
+ * re-signed. Keyed to `image_path` by the parent so a changed photo remounts + resets.
  */
 function Thumbnail({
   uri,
@@ -436,6 +552,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
   },
   centerText: { textAlign: 'center' },
+  pinnedContainer: {
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  filterWrap: { gap: Spacing.two },
   listContent: {
     paddingHorizontal: Spacing.four,
     width: '100%',
@@ -447,9 +570,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: Spacing.three,
   },
-  notice: { marginBottom: Spacing.three },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  chip: { minWidth: 72 },
+  rangeRow: { gap: Spacing.two },
+  notice: { marginTop: Spacing.one },
   empty: {
     flex: 1,
     justifyContent: 'center',

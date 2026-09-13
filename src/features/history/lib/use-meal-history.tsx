@@ -27,6 +27,8 @@ import { useUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 
+import { escapeIlike, resolveRange, type HistoryFilter } from './history-filter';
+
 /** The exact columns the history card renders — enforced at the type level. */
 export type MealCard = Pick<
   Database['public']['Tables']['meal_logs']['Row'],
@@ -49,30 +51,41 @@ const SELECT_COLUMNS =
 export const HISTORY_LIMIT = 100;
 
 export type MealHistoryStatus = {
-  /** True until the first query resolves for the current user. */
+  /** True ONLY on the very first load with no data yet — the full-screen spinner
+   *  case. Filter changes do NOT flip this (they set `refetching`), so the pinned
+   *  search box never unmounts mid-type (plan 0033 B1). */
   loading: boolean;
-  /** The user's meals, newest first (empty array when none). */
+  /** A query is in flight while prior rows are still shown (filter change / refresh). */
+  refetching: boolean;
+  /** The user's meals for the active filter, newest first (empty when none match). */
   meals: MealCard[];
-  /** True when the fetch failed (transient → show Retry, don't assume a shape). */
+  /** True when the current query failed (transient → show Retry, keep the filter UI). */
   error: boolean;
   /** Re-run the fetch (pull-to-refresh, and after a successful delete). */
   refetch: () => void;
 };
 
-export function useMealHistory(): MealHistoryStatus {
+export function useMealHistory(filter: HistoryFilter): MealHistoryStatus {
   const { user } = useUser();
   const userId = user?.id ?? null;
+
+  // Derived query primitives (stable by value within a day — see history-filter.ts).
+  // These, not the `filter` object, drive the effect + outcome key so a fresh object
+  // each render can't churn/refetch-loop (plan 0033 B2 + SHOULD-FIX).
+  const pattern = escapeIlike(filter.search);
+  const { fromIso, toIso } = resolveRange(filter);
+  const attemptKey = `${pattern}|${fromIso ?? ''}|${toIso ?? ''}`;
 
   // Bumping this re-runs the effect; the mounted guard prevents setState after
   // unmount (e.g. sign-out mid-fetch).
   const [reloadKey, setReloadKey] = useState(0);
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
-  // The outcome is KEYED to the exact (user, attempt) it came from, so a stale
-  // answer from a previous user/attempt always reads as "still loading".
+  // The outcome is KEYED to the exact (user, attempt, filter) it came from, so a
+  // stale answer from a previous user/attempt/filter never renders (debounce race).
   type Outcome =
-    | { userId: string; reloadKey: number; kind: 'ok'; meals: MealCard[] }
-    | { userId: string; reloadKey: number; kind: 'error' };
+    | { userId: string; reloadKey: number; filterKey: string; kind: 'ok'; meals: MealCard[] }
+    | { userId: string; reloadKey: number; filterKey: string; kind: 'error' };
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
   const mounted = useRef(true);
@@ -89,38 +102,67 @@ export function useMealHistory(): MealHistoryStatus {
     let active = true;
     const attempt = reloadKey;
 
-    supabase
+    let query = supabase
       .from('meal_logs')
       .select(SELECT_COLUMNS)
-      .eq('user_id', userId) // MANDATORY defense-in-depth (see file header).
+      .eq('user_id', userId); // MANDATORY defense-in-depth (see file header).
+    if (pattern) query = query.ilike('dish_name', `%${pattern}%`);
+    if (fromIso) query = query.gte('eaten_at', fromIso);
+    if (toIso) query = query.lte('eaten_at', toIso);
+
+    query
       .order('eaten_at', { ascending: false })
       .limit(HISTORY_LIMIT)
       .then(({ data, error: queryError }) => {
         if (!active || !mounted.current) return;
         setOutcome(
           queryError || data == null
-            ? { userId, reloadKey: attempt, kind: 'error' }
-            : { userId, reloadKey: attempt, kind: 'ok', meals: data as unknown as MealCard[] },
+            ? { userId, reloadKey: attempt, filterKey: attemptKey, kind: 'error' }
+            : {
+                userId,
+                reloadKey: attempt,
+                filterKey: attemptKey,
+                kind: 'ok',
+                meals: data as unknown as MealCard[],
+              },
         );
       });
 
     return () => {
       active = false;
     };
-  }, [userId, reloadKey]);
+  }, [userId, reloadKey, pattern, fromIso, toIso, attemptKey]);
 
   return useMemo<MealHistoryStatus>(() => {
     if (!userId) {
-      return { loading: false, meals: [], error: false, refetch };
+      return { loading: false, refetching: false, meals: [], error: false, refetch };
     }
+    // Resolved for THIS exact attempt (user + reload + filter).
     const fresh =
-      outcome?.userId === userId && outcome.reloadKey === reloadKey ? outcome : null;
-    if (!fresh) {
-      return { loading: true, meals: [], error: false, refetch };
+      outcome?.userId === userId &&
+      outcome.reloadKey === reloadKey &&
+      outcome.filterKey === attemptKey
+        ? outcome
+        : null;
+    // Best rows to keep on screen while a new query is in flight: the last OK result
+    // for THIS filter if we have it, else the last OK result for any filter (avoids a
+    // blank flash on a filter change — the header stays mounted regardless).
+    const okThisFilter =
+      outcome?.userId === userId && outcome.kind === 'ok' && outcome.filterKey === attemptKey
+        ? outcome.meals
+        : null;
+    const okAny = outcome?.userId === userId && outcome.kind === 'ok' ? outcome.meals : null;
+
+    if (fresh) {
+      if (fresh.kind === 'error') {
+        return { loading: false, refetching: false, meals: okThisFilter ?? [], error: true, refetch };
+      }
+      return { loading: false, refetching: false, meals: fresh.meals, error: false, refetch };
     }
-    if (fresh.kind === 'error') {
-      return { loading: false, meals: [], error: true, refetch };
+    // No result for this attempt yet → a query is in flight.
+    if (okAny) {
+      return { loading: false, refetching: true, meals: okThisFilter ?? okAny, error: false, refetch };
     }
-    return { loading: false, meals: fresh.meals, error: false, refetch };
-  }, [userId, reloadKey, outcome, refetch]);
+    return { loading: true, refetching: false, meals: [], error: false, refetch };
+  }, [userId, reloadKey, attemptKey, outcome, refetch]);
 }
