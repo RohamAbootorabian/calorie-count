@@ -33,6 +33,7 @@ import type { Database } from '@/types/database';
 import { Button, Card, Input, Screen, Text } from '@/shared/ui';
 
 import { HealthQuestion } from '../components/health-question';
+import { SelectGroup } from '../components/select-group';
 import {
   parseTarget,
   validateTargetCalories,
@@ -804,43 +805,6 @@ function saveErrorMessage(error: { code?: string }): string {
     return 'Your session expired — please sign in again.';
   }
   return "We couldn't save your changes. Please try again.";
-}
-
-/** Full-width selectable rows built from Button (SF3 — no new primitive). */
-function SelectGroup<T extends string>({
-  label,
-  error,
-  options,
-  value,
-  onSelect,
-}: {
-  label: string;
-  error?: string;
-  options: { value: T; label: string; hint?: string }[];
-  value: T | undefined;
-  onSelect: (value: T) => void;
-}) {
-  return (
-    <View style={styles.group}>
-      <Text type="smallBold" themeColor="textSecondary">
-        {label}
-      </Text>
-      {options.map((option) => (
-        <Button
-          key={option.value}
-          variant={value === option.value ? 'primary' : 'secondary'}
-          onPress={() => onSelect(option.value)}
-          fullWidth>
-          {option.hint ? `${option.label} — ${option.hint}` : option.label}
-        </Button>
-      ))}
-      {error ? (
-        <Text type="small" themeColor="danger">
-          {error}
-        </Text>
-      ) : null}
-    </View>
-  );
 }
 
 /** Live recomputed targets + the clamp note when floored (N5). */

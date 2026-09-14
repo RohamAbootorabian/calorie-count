@@ -1867,3 +1867,28 @@ the three separate reads into one fetch (would change refetch semantics — out 
 
 **Verified.** tsc 0; expo lint 0; full web export 0. Pure client refactor — JS-only (reload).
 This completes the tech-debt section (0037 useMealForm + 0038 useOwnedMealRows).
+
+---
+
+## 2026-09-14 — Plan 0039: extract shared `SelectGroup` (DRY onboarding + settings)
+
+**What we did**
+- The full-width "selectable rows built from `Button`" component `SelectGroup<T extends string>` was
+  defined byte-for-byte identically in both `onboarding-wizard.tsx` and `settings-screen.tsx`. Extracted
+  it once into `src/features/auth/components/select-group.tsx` (feature-local, mirroring the earlier
+  `HealthQuestion` extraction — not general enough for the shared `@/shared/ui` kit) and imported it in
+  both screens.
+- The new component owns its own `group` style (`{ gap: Spacing.two }`). In onboarding the local
+  `styles.group` was then orphaned → removed; in settings it was KEPT (still used by the Units +
+  Timezone blocks, not only by `SelectGroup`).
+
+**Key decisions & why**
+- **Generic `<T extends string>` preserved** so each call site keeps its exact literal-union typing via
+  inference — no call site passes an explicit type arg; zero behavior/UI change.
+- **Asymmetric style cleanup** — both reviewers flagged that `styles.group` is orphaned in onboarding
+  but live in settings; deleting it from settings would break L568/L583 (tsc TS2339 would catch it, but
+  we did not rely on that).
+- `ReviewRow` is also duplicated across the two screens — considered-and-excluded (kept scope to the one
+  component the user named).
+
+**Verified.** tsc 0; expo lint 0; full web export success. Pure client refactor — JS-only (reload).
