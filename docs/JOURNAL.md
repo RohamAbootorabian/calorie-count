@@ -1760,3 +1760,33 @@ the extracted component must own its styles → done.
 deploy; JS-only (reload).
 **Pending:** user device-verify on a FRESH account (Health step appears after Goal; declaring an
 allergy persists + shows in Settings; skipping both = normal completion).
+
+## 2026-09-14 — Plan 0035 executed: manual (custom) calorie + macro targets
+
+**What.** Settings → Daily goals now has a "Targets" toggle: "Computed from your body" (today's
+TDEE behavior) or "Custom targets" — four editable calorie/protein/carbs/fat fields saved verbatim.
+Dashboards (which read the stored goal columns) reflect the manual numbers automatically.
+
+**How.**
+- Migration `20260914120000_goals_is_custom.sql`: `goals.is_custom boolean not null default false`
+  (metadata-only add; existing rows → computed). Applied via db push; `database.ts` regenerated.
+- `custom-goals.ts` (new, pure): bounds + `parseTarget` (strips `,`/spaces so "2,200"→2200) +
+  `validateTargetCalories`/`validateTargetMacro` (WHOLE numbers + range; never echo the value).
+- `settings-screen.tsx`: custom state seeded via the existing one-shot `seededGoals` effect;
+  toggle (reuses SelectGroup); custom mode shows the four centered integer inputs + a non-blocking
+  sub-`MIN_CALORIES` warning and HIDES the body editor + GoalsReview; `handleSaveGoals` branches —
+  custom → upsert `{calories,protein,carbs,fat (rounded), is_custom:true}` (body columns OMITTED, so
+  the on-conflict UPDATE preserves the stored body → no body validation needed to save a target
+  change); computed → today's write + explicit `is_custom:false`. Save button `disabled` is
+  mode-aware; a `manualDirty` ref re-seeds the fields from the live computed targets on toggle.
+
+**Review.** Full 4-agent review. NEEDS CHANGES → APPROVED. Fixes: integer enforcement (calories is
+an int column — decimals would silently round/drift); custom save decoupled from body validity
+(hide body + omit body columns); mode-aware Save disabled; soft safety-floor warning; locale-comma
+parsing; re-seed on toggle. RLS/PII/cost confirmed clean; is_custom is the robust model.
+`DailyGoalsCard` extraction deferred (tech debt) to avoid refactoring the working body editor here.
+
+**Verified.** tsc 0; expo lint 0; full web export 0; migration applied to prod. Client change +
+one column — no function deploy. Reload picks it up.
+**Pending:** user device-verify (toggle custom, set 2200/180/200/70 → dashboards use it; reopen
+Settings → still custom with same numbers; toggle back → computed; out-of-range/decimal blocked).

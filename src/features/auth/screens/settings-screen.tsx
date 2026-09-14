@@ -33,6 +33,11 @@ import type { Database } from '@/types/database';
 import { Button, Card, Input, Screen, Text } from '@/shared/ui';
 
 import { HealthQuestion } from '../components/health-question';
+import {
+  parseTarget,
+  validateTargetCalories,
+  validateTargetMacro,
+} from '../lib/custom-goals';
 
 import {
   ACTIVITY_OPTIONS,
@@ -55,7 +60,7 @@ import {
   timezoneDisplay,
   validateDisplayName,
 } from '../lib/profile-form';
-import { computeGoals, type ActivityLevel, type ComputedGoals, type MetricInput, type Sex, type WeightGoal } from '../lib/tdee';
+import { computeGoals, MIN_CALORIES, type ActivityLevel, type ComputedGoals, type MetricInput, type Sex, type WeightGoal } from '../lib/tdee';
 import { useProfile } from '../lib/use-profile';
 
 type GoalsRow = Database['public']['Tables']['goals']['Row'];
@@ -196,6 +201,17 @@ export function SettingsScreen() {
   const [goalsError, setGoalsError] = useState<string>();
   const [goalsSaved, setGoalsSaved] = useState(false);
 
+  // Custom (manual) targets (plan 0035): when on, the four values below are saved
+  // verbatim (is_custom=true) and the body editor is hidden; when off, targets are
+  // computed from the body via TDEE (today's behavior). `manualDirty` guards the
+  // re-seed on toggle so a user's in-progress edits are never clobbered.
+  const [customTargets, setCustomTargets] = useState(false);
+  const [calInput, setCalInput] = useState('');
+  const [proteinInput, setProteinInput] = useState('');
+  const [carbsInput, setCarbsInput] = useState('');
+  const [fatInput, setFatInput] = useState('');
+  const manualDirty = useRef(false);
+
   // Seed the unit-independent goal fields once the row loads.
   const seededGoals = useRef(false);
   useEffect(() => {
@@ -207,6 +223,11 @@ export function SettingsScreen() {
     setActivityLevel(row.activity_level as ActivityLevel);
     setWeightGoal(row.weight_goal as WeightGoal);
     setCanonicalBody({ heightCm: row.height_cm, weightKg: row.weight_kg });
+    setCustomTargets(row.is_custom);
+    setCalInput(String(row.calories));
+    setProteinInput(String(Math.round(row.protein)));
+    setCarbsInput(String(Math.round(row.carbs)));
+    setFatInput(String(Math.round(row.fat)));
   }, [goals.loading, goals.row]);
 
   // Build the metric input for computeGoals from current state, or null if any
@@ -242,6 +263,17 @@ export function SettingsScreen() {
       return undefined;
     }
   }, [metricInput]);
+
+  // Custom-target validation (plan 0035). Derived in render — no memo (compiler ON).
+  const manualErrors = {
+    calories: validateTargetCalories(calInput),
+    protein: validateTargetMacro(proteinInput, 'protein (g)'),
+    carbs: validateTargetMacro(carbsInput, 'carbs (g)'),
+    fat: validateTargetMacro(fatInput, 'fat (g)'),
+  };
+  const manualValid = !Object.values(manualErrors).some(Boolean);
+  // Non-blocking safety cue when a custom calorie target is below the computed floor.
+  const belowFloor = manualValid && parseTarget(calInput) < MIN_CALORIES;
 
   // --- Profile handlers ------------------------------------------------------
   function changeName(text: string) {
@@ -381,13 +413,68 @@ export function SettingsScreen() {
     setGoalsSaved(false);
   }
 
+  // --- Custom-target handlers (plan 0035) ------------------------------------
+  function changeManual(setter: (v: string) => void, text: string) {
+    manualDirty.current = true;
+    setter(text);
+    setGoalsError(undefined);
+    setGoalsSaved(false);
+  }
+
+  function selectCustomTargets(next: boolean) {
+    setCustomTargets(next);
+    setGoalsSaved(false);
+    // Turning custom ON: seed the fields from the freshest targets (the live computed
+    // preview if available, else the stored/last values already in state) UNLESS the
+    // user has edited them this session — so they're never a stale preview (SF4).
+    if (next && !manualDirty.current && computed) {
+      setCalInput(String(computed.calories));
+      setProteinInput(String(Math.round(computed.protein)));
+      setCarbsInput(String(Math.round(computed.carbs)));
+      setFatInput(String(Math.round(computed.fat)));
+    }
+  }
+
   async function handleSaveGoals() {
     if (!user?.id) {
       setGoalsError('You appear to be signed out. Please sign in again.');
       return;
     }
-    // Validate every field in the active display units (B2). A complete, valid
-    // body set is required — never partial-write null into a populated row (SF6).
+    // CUSTOM mode (plan 0035): save the four manual targets verbatim (rounded to
+    // whole numbers — calories is an integer column) + is_custom=true. The body
+    // columns are OMITTED, so the on-conflict UPDATE leaves the row's existing body
+    // untouched — no body validation is required to save a manual-target change.
+    if (customTargets) {
+      if (!manualValid) return; // the inline field errors already show why.
+      setGoalsSaving(true);
+      setGoalsError(undefined);
+      setGoalsSaved(false);
+      const { error } = await supabase.from('goals').upsert(
+        {
+          user_id: user.id,
+          calories: Math.round(parseTarget(calInput)),
+          protein: Math.round(parseTarget(proteinInput)),
+          carbs: Math.round(parseTarget(carbsInput)),
+          fat: Math.round(parseTarget(fatInput)),
+          is_custom: true,
+        },
+        { onConflict: 'user_id' },
+      );
+      if (!mounted.current) return;
+      if (error) {
+        setGoalsError(saveErrorMessage(error));
+        setGoalsSaving(false);
+        return;
+      }
+      manualDirty.current = false;
+      setGoalsSaving(false);
+      setGoalsSaved(true);
+      return;
+    }
+
+    // COMPUTED mode: validate every field in the active display units (B2). A
+    // complete, valid body set is required — never partial-write null into a
+    // populated row (SF6).
     const errors = {
       age: validateAge(age),
       sex: sex ? undefined : 'Select an option.',
@@ -413,6 +500,7 @@ export function SettingsScreen() {
 
     // Identical write shape to the wizard (B5): idempotent upsert; client supplies
     // user_id; raw body inputs stay populated (plan 0005 SF5). No updated_at (SF5).
+    // is_custom=false explicitly clears a prior custom flag (plan 0035).
     const { error } = await supabase.from('goals').upsert(
       {
         user_id: user.id,
@@ -420,6 +508,7 @@ export function SettingsScreen() {
         protein: result.protein,
         carbs: result.carbs,
         fat: result.fat,
+        is_custom: false,
         weight_goal: metricInput.weightGoal,
         activity_level: metricInput.activityLevel,
         age: metricInput.age,
@@ -437,10 +526,16 @@ export function SettingsScreen() {
       return;
     }
     // Adopt the saved metric as the new canonical and drop the edit overrides so the
-    // fields re-derive from it (B1 — no drift on the next render).
+    // fields re-derive from it (B1 — no drift on the next render). Re-seed the manual
+    // inputs from the just-computed targets so a later custom toggle isn't stale.
     setCanonicalBody({ heightCm: metricInput.heightCm, weightKg: metricInput.weightKg });
     setHeightEdit(null);
     setWeightEdit(null);
+    setCalInput(String(result.calories));
+    setProteinInput(String(Math.round(result.protein)));
+    setCarbsInput(String(Math.round(result.carbs)));
+    setFatInput(String(Math.round(result.fat)));
+    manualDirty.current = false;
     setGoalsSaving(false);
     setGoalsSaved(true);
   }
@@ -553,56 +648,113 @@ export function SettingsScreen() {
           </Text>
         ) : (
           <>
-            <Input
-              label="Age"
-              value={age}
-              onChangeText={changeAge}
-              keyboardType="number-pad"
-              inputMode="numeric"
-              error={goalErrors.age}
-              textAlign="center"
-            />
+            {/* Targets source (plan 0035): computed from body, or manual/custom. */}
             <SelectGroup
-              label="Sex"
-              error={goalErrors.sex}
-              options={SEX_OPTIONS}
-              value={sex}
-              onSelect={selectSex}
-            />
-            <Input
-              label={units === 'imperial' ? 'Height (in)' : 'Height (cm)'}
-              value={heightInput}
-              onChangeText={changeHeight}
-              keyboardType="decimal-pad"
-              inputMode="decimal"
-              error={goalErrors.height}
-              textAlign="center"
-            />
-            <Input
-              label={units === 'imperial' ? 'Weight (lb)' : 'Weight (kg)'}
-              value={weightInput}
-              onChangeText={changeWeight}
-              keyboardType="decimal-pad"
-              inputMode="decimal"
-              error={goalErrors.weight}
-              textAlign="center"
-            />
-            <SelectGroup
-              label="How active are you?"
-              error={goalErrors.activityLevel}
-              options={ACTIVITY_OPTIONS}
-              value={activityLevel}
-              onSelect={selectActivity}
-            />
-            <SelectGroup
-              label="What's your goal?"
-              error={goalErrors.weightGoal}
-              options={GOAL_OPTIONS}
-              value={weightGoal}
-              onSelect={selectGoal}
+              label="Targets"
+              options={TARGET_MODE_OPTIONS}
+              value={customTargets ? 'custom' : 'computed'}
+              onSelect={(v) => selectCustomTargets(v === 'custom')}
             />
 
-            <GoalsReview computed={computed} />
+            {customTargets ? (
+              <>
+                <Input
+                  label="Calories (kcal)"
+                  value={calInput}
+                  onChangeText={(t) => changeManual(setCalInput, t)}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  error={manualErrors.calories}
+                  textAlign="center"
+                />
+                <Input
+                  label="Protein (g)"
+                  value={proteinInput}
+                  onChangeText={(t) => changeManual(setProteinInput, t)}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  error={manualErrors.protein}
+                  textAlign="center"
+                />
+                <Input
+                  label="Carbs (g)"
+                  value={carbsInput}
+                  onChangeText={(t) => changeManual(setCarbsInput, t)}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  error={manualErrors.carbs}
+                  textAlign="center"
+                />
+                <Input
+                  label="Fat (g)"
+                  value={fatInput}
+                  onChangeText={(t) => changeManual(setFatInput, t)}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  error={manualErrors.fat}
+                  textAlign="center"
+                />
+                {belowFloor ? (
+                  <Text type="small" themeColor="textSecondary">
+                    That&apos;s below the usual safe minimum of {MIN_CALORIES} kcal/day — you can
+                    still save it if that&apos;s intended.
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Input
+                  label="Age"
+                  value={age}
+                  onChangeText={changeAge}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  error={goalErrors.age}
+                  textAlign="center"
+                />
+                <SelectGroup
+                  label="Sex"
+                  error={goalErrors.sex}
+                  options={SEX_OPTIONS}
+                  value={sex}
+                  onSelect={selectSex}
+                />
+                <Input
+                  label={units === 'imperial' ? 'Height (in)' : 'Height (cm)'}
+                  value={heightInput}
+                  onChangeText={changeHeight}
+                  keyboardType="decimal-pad"
+                  inputMode="decimal"
+                  error={goalErrors.height}
+                  textAlign="center"
+                />
+                <Input
+                  label={units === 'imperial' ? 'Weight (lb)' : 'Weight (kg)'}
+                  value={weightInput}
+                  onChangeText={changeWeight}
+                  keyboardType="decimal-pad"
+                  inputMode="decimal"
+                  error={goalErrors.weight}
+                  textAlign="center"
+                />
+                <SelectGroup
+                  label="How active are you?"
+                  error={goalErrors.activityLevel}
+                  options={ACTIVITY_OPTIONS}
+                  value={activityLevel}
+                  onSelect={selectActivity}
+                />
+                <SelectGroup
+                  label="What's your goal?"
+                  error={goalErrors.weightGoal}
+                  options={GOAL_OPTIONS}
+                  value={weightGoal}
+                  onSelect={selectGoal}
+                />
+
+                <GoalsReview computed={computed} />
+              </>
+            )}
 
             {goalsError ? (
               <Text type="small" themeColor="danger">
@@ -617,7 +769,7 @@ export function SettingsScreen() {
             <Button
               onPress={handleSaveGoals}
               loading={goalsSaving}
-              disabled={!computed}
+              disabled={customTargets ? !manualValid : !computed}
               variant="success"
               fullWidth>
               Save goals
@@ -732,6 +884,12 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
 const UNIT_OPTIONS: { value: Units; label: string }[] = [
   { value: 'metric', label: 'Metric (cm, kg)' },
   { value: 'imperial', label: 'Imperial (in, lb)' },
+];
+
+/** Targets source toggle (plan 0035): computed from body vs. manual/custom. */
+const TARGET_MODE_OPTIONS: { value: 'computed' | 'custom'; label: string }[] = [
+  { value: 'computed', label: 'Computed from your body' },
+  { value: 'custom', label: 'Custom targets' },
 ];
 
 const styles = StyleSheet.create({

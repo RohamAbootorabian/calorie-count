@@ -81,6 +81,7 @@ export type Database = {
           created_at: string
           fat: number
           height_cm: number | null
+          is_custom: boolean
           protein: number
           sex: string | null
           updated_at: string
@@ -96,6 +97,7 @@ export type Database = {
           created_at?: string
           fat: number
           height_cm?: number | null
+          is_custom?: boolean
           protein: number
           sex?: string | null
           updated_at?: string
@@ -111,6 +113,7 @@ export type Database = {
           created_at?: string
           fat?: number
           height_cm?: number | null
+          is_custom?: boolean
           protein?: number
           sex?: string | null
           updated_at?: string
