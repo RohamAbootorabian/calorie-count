@@ -1734,3 +1734,29 @@ deploy; JS-only (reload). PRIVACY: the dish-name term is never logged/analytics'
 in the PostgREST request URL — unavoidable for server-side ilike).
 **Pending:** user device-verify (search an old >100th meal → appears; presets + custom range;
 combined; typing keeps keyboard/focus; clear restores full list).
+
+## 2026-09-14 — Plan 0034 executed: collect allergies + conditions during Onboarding
+
+**What.** New users can now declare food allergies + medical/physical conditions during the
+onboarding wizard (a new optional "Health info" step, default No), persisted to the same `profiles`
+columns as the Settings screen — so the meal-analysis allergen flag (0031/0032) works from day one.
+
+**How.**
+- Extracted `HealthQuestion` (from settings-screen) to a shared `src/features/auth/components/
+  health-question.tsx` (owns its own styles); Settings + the wizard both import it. Removed the
+  local copy + its now-unused `healthNote` style/`HEALTH_NOTE_MAX` import from settings.
+- `onboarding-form.ts`: added the 4 health fields to `OnboardingForm`/`EMPTY_FORM`; `STEPS` is now
+  `['about','body','activity','goal','health','review']` (kept `goal` — the review caught a draft
+  that had dropped it); `validateStep('health') → {}`.
+- `onboarding-wizard.tsx`: renders the health step (two `HealthQuestion`s, note cleared on No) +
+  step title/subtitle; `handleSave` upserts `profiles` health FIRST (partial-column, force-null
+  behind a false flag) then `goals` LAST (goals still gates onboarding completion) — both idempotent.
+
+**Review.** Two-agent review (mirrors already-reviewed 0031). NEEDS CHANGES → APPROVED. BLOCKER:
+the draft `STEPS` literal dropped `goal` (would make onboarding impossible) → fixed. SHOULD-FIX:
+the extracted component must own its styles → done.
+
+**Verified.** tsc 0; expo lint 0; full web export 0. Pure client change — no migration/secret/
+deploy; JS-only (reload).
+**Pending:** user device-verify on a FRESH account (Health step appears after Goal; declaring an
+allergy persists + shows in Settings; skipping both = normal completion).

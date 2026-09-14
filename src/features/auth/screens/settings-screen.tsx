@@ -32,6 +32,8 @@ import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import { Button, Card, Input, Screen, Text } from '@/shared/ui';
 
+import { HealthQuestion } from '../components/health-question';
+
 import {
   ACTIVITY_OPTIONS,
   GOAL_OPTIONS,
@@ -48,7 +50,6 @@ import {
 } from '../lib/onboarding-form';
 import {
   getDeviceTimezone,
-  HEALTH_NOTE_MAX,
   normalizeDisplayName,
   normalizeHealthNote,
   timezoneDisplay,
@@ -690,61 +691,6 @@ function SelectGroup<T extends string>({
   );
 }
 
-/**
- * One health question (plan 0031): a No/Yes selector (default No, built on the same
- * Button rows as SelectGroup) that reveals a centered multiline note on Yes. The note
- * is length-capped by `maxLength` (mirrors the DB check), so there's no validator.
- */
-function HealthQuestion({
-  label,
-  noLabel,
-  yesLabel,
-  notePlaceholder,
-  value,
-  onSelect,
-  note,
-  onChangeNote,
-  disabled,
-}: {
-  label: string;
-  noLabel: string;
-  yesLabel: string;
-  notePlaceholder: string;
-  value: boolean;
-  onSelect: (next: boolean) => void;
-  note: string;
-  onChangeNote: (text: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <View style={styles.group}>
-      <Text type="smallBold" themeColor="textSecondary">
-        {label}
-      </Text>
-      <Button variant={!value ? 'primary' : 'secondary'} onPress={() => onSelect(false)} fullWidth>
-        {noLabel}
-      </Button>
-      <Button variant={value ? 'primary' : 'secondary'} onPress={() => onSelect(true)} fullWidth>
-        {yesLabel}
-      </Button>
-      {value ? (
-        <Input
-          value={note}
-          onChangeText={onChangeNote}
-          placeholder={notePlaceholder}
-          hint={`${[...note].length}/${HEALTH_NOTE_MAX}`}
-          autoCapitalize="sentences"
-          multiline
-          maxLength={HEALTH_NOTE_MAX}
-          editable={!disabled}
-          textAlign="center"
-          style={styles.healthNote}
-        />
-      ) : null}
-    </View>
-  );
-}
-
 /** Live recomputed targets + the clamp note when floored (N5). */
 function GoalsReview({ computed }: { computed: ComputedGoals | undefined }) {
   if (!computed) {
@@ -806,9 +752,5 @@ const styles = StyleSheet.create({
   reviewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  healthNote: {
-    minHeight: 88,
-    textAlignVertical: 'top',
   },
 });

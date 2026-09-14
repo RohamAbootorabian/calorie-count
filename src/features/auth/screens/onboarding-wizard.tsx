@@ -21,6 +21,7 @@ import { useUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { Button, Card, Input, Screen, Text } from '@/shared/ui';
 
+import { HealthQuestion } from '../components/health-question';
 import {
   ACTIVITY_OPTIONS,
   EMPTY_FORM,
@@ -33,6 +34,7 @@ import {
   type Step,
   type StepErrors,
 } from '../lib/onboarding-form';
+import { normalizeHealthNote } from '../lib/profile-form';
 import { computeGoals, type ComputedGoals } from '../lib/tdee';
 import { useOnboardingStatus } from '../lib/use-onboarding-status';
 
@@ -101,6 +103,27 @@ export function OnboardingWizard() {
     const metric = toMetricInput(form);
     setSaving(true);
     setSaveError(undefined);
+
+    // Health info (plan 0034) → `profiles`, written FIRST so `goals` stays the last,
+    // gate-flipping write (use-onboarding-status keys off the goals row). Partial-column
+    // upsert leaves display_name/units/timezone intact; a note is force-nulled behind a
+    // false flag (matches the DB gate check). Idempotent → safe to retry.
+    const { error: profileError } = await supabase.from('profiles').upsert(
+      {
+        id: user.id,
+        has_allergies: form.hasAllergies,
+        allergies_note: form.hasAllergies ? normalizeHealthNote(form.allergiesNote) : null,
+        has_conditions: form.hasConditions,
+        conditions_note: form.hasConditions ? normalizeHealthNote(form.conditionsNote) : null,
+      },
+      { onConflict: 'id' },
+    );
+    if (!mounted.current) return;
+    if (profileError) {
+      setSaveError("We couldn't save your health info. Please try again.");
+      setSaving(false);
+      return;
+    }
 
     // Upsert (not insert) → a retry is idempotent, never a duplicate row (B5/SF6).
     const { error } = await supabase.from('goals').upsert(
@@ -205,6 +228,37 @@ export function OnboardingWizard() {
             value={form.weightGoal}
             onSelect={(v) => update('weightGoal', v)}
           />
+        ) : null}
+
+        {step === 'health' ? (
+          <>
+            <HealthQuestion
+              label="Food allergies or sensitivities"
+              noLabel="No food allergies"
+              yesLabel="I have food allergies"
+              notePlaceholder="e.g. peanuts, shellfish, lactose"
+              value={form.hasAllergies}
+              onSelect={(next) => {
+                update('hasAllergies', next);
+                if (!next) update('allergiesNote', '');
+              }}
+              note={form.allergiesNote}
+              onChangeNote={(t) => update('allergiesNote', t)}
+            />
+            <HealthQuestion
+              label="Medical or physical conditions"
+              noLabel="No conditions"
+              yesLabel="I have a condition"
+              notePlaceholder="e.g. diabetes, high blood pressure"
+              value={form.hasConditions}
+              onSelect={(next) => {
+                update('hasConditions', next);
+                if (!next) update('conditionsNote', '');
+              }}
+              note={form.conditionsNote}
+              onChangeNote={(t) => update('conditionsNote', t)}
+            />
+          </>
         ) : null}
 
         {step === 'review' ? (
@@ -322,6 +376,7 @@ const STEP_TITLE: Record<Step, string> = {
   body: 'Your body',
   activity: 'Activity level',
   goal: 'Your goal',
+  health: 'Health info',
   review: 'Review',
 };
 
@@ -330,6 +385,7 @@ const STEP_SUBTITLE: Record<Step, string> = {
   body: 'Height and weight, in metric units.',
   activity: 'Pick the option closest to a typical week.',
   goal: 'We adjust your calories to match.',
+  health: 'Optional — helps us flag allergens when analyzing your meals.',
   review: 'Here are the targets we computed for you.',
 };
 

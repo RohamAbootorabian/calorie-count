@@ -55,6 +55,12 @@ export type OnboardingForm = {
   weightKg: string;
   activityLevel?: ActivityLevel;
   weightGoal?: WeightGoal;
+  // Health info (plan 0034) — optional; persisted to `profiles`, not `goals`. Default
+  // "no", with a free-text note only when the flag is on (see the wizard's save).
+  hasAllergies: boolean;
+  allergiesNote: string;
+  hasConditions: boolean;
+  conditionsNote: string;
 };
 
 export const EMPTY_FORM: OnboardingForm = {
@@ -64,6 +70,10 @@ export const EMPTY_FORM: OnboardingForm = {
   weightKg: '',
   activityLevel: undefined,
   weightGoal: undefined,
+  hasAllergies: false,
+  allergiesNote: '',
+  hasConditions: false,
+  conditionsNote: '',
 };
 
 /** Parse a user-typed number, tolerating a locale comma; returns NaN if unusable. */
@@ -101,8 +111,8 @@ export function validateWeightKg(raw: string): string | undefined {
 /** Field-level errors for a step; empty object means the step is valid. */
 export type StepErrors = Partial<Record<keyof OnboardingForm, string>>;
 
-/** The wizard's step identifiers, in order. */
-export const STEPS = ['about', 'body', 'activity', 'goal', 'review'] as const;
+/** The wizard's step identifiers, in order. `health` (plan 0034) sits before Review. */
+export const STEPS = ['about', 'body', 'activity', 'goal', 'health', 'review'] as const;
 export type Step = (typeof STEPS)[number];
 
 /**
@@ -130,6 +140,8 @@ export function validateStep(step: Step, form: OnboardingForm): StepErrors {
       return form.activityLevel ? {} : { activityLevel: 'Select an option.' };
     case 'goal':
       return form.weightGoal ? {} : { weightGoal: 'Select an option.' };
+    case 'health':
+      return {}; // optional; notes are length-capped by the input, nothing required.
     case 'review':
       return {};
   }
