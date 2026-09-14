@@ -1820,3 +1820,23 @@ handlers noted as a separate out-of-scope cleanup.
 deploy; JS-only (reload).
 **Pending:** user device-verify (create + edit): Add item → fill → totals update, Save enables,
 persists; add to 50 → disabled + note; add then remove → stable.
+
+## 2026-09-14 — Plan 0037 executed: extract useMealForm (DRY the meal-form handlers)
+
+**What.** Pure refactor: the byte-identical meal-form block (form state + six handlers +
+totals/withinCaps/formValid) that MealReview (create) and EditMealScreen (edit) each duplicated now
+lives once in `useMealForm`. No behavior/UI change.
+
+**How.** New `src/features/capture/lib/use-meal-form.tsx` owns `form` + setDishName/setNote/
+setEatenAt/setItemField/removeItem/addItem + render-derived totals/withinCaps/formValid (lazy
+`useState(init)` preserves seed-once + host-`key` remount; no memo — React Compiler). Both screens
+call the hook and keep their own save lifecycle (different RPCs, `mounted` ref, retry copy,
+`onSaving`/`gone`/`router.back`), composing `canSave = !saving && formValid && withinCaps`. Trimmed
+the now-unused imports (recomputeTotals/totalsWithinCaps/isFormValid/appendEmptyItem/MAX_ITEMS/
+MealForm/MealItemForm/useMemo).
+
+**Review.** Two-agent review (equivalence + architecture). APPROVED, no blockers — confirmed
+behavior-preserving (lazy init, pure totals, non-memoized child, functional setForm). Import-trim
+folded in.
+
+**Verified.** tsc 0; expo lint 0; full web export 0. Pure client refactor — JS-only (reload).

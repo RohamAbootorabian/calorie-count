@@ -19,21 +19,12 @@
  * rounds each field) — intended; edit always stores totals = sum of items.
  */
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
-import {
-  appendEmptyItem,
-  isFormValid,
-  MAX_ITEMS,
-  recomputeTotals,
-  seedFormFromMealLog,
-  toSavePayload,
-  totalsWithinCaps,
-  type MealForm,
-  type MealItemForm,
-} from '@/features/capture/lib/meal-form';
+import { seedFormFromMealLog, toSavePayload } from '@/features/capture/lib/meal-form';
+import { useMealForm } from '@/features/capture/lib/use-meal-form';
 import { MealEditorForm } from '@/features/capture/screens/meal-editor-form';
 import { Button, Screen, Text } from '@/shared/ui';
 
@@ -95,7 +86,18 @@ export default function EditMealScreen() {
 
 /** The loaded editor — mounted only once `detail` is present, so it seeds once. */
 function MealEditor({ id, detail }: { id: string; detail: NonNullable<ReturnType<typeof useMealDetail>['detail']> }) {
-  const [form, setForm] = useState<MealForm>(() => seedFormFromMealLog(detail.log, detail.items));
+  const {
+    form,
+    totals,
+    withinCaps,
+    formValid,
+    setDishName,
+    setNote,
+    setEatenAt,
+    setItemField,
+    removeItem,
+    addItem,
+  } = useMealForm(() => seedFormFromMealLog(detail.log, detail.items));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
   const [saveCanRetry, setSaveCanRetry] = useState(false);
@@ -110,39 +112,7 @@ function MealEditor({ id, detail }: { id: string; detail: NonNullable<ReturnType
     };
   }, []);
 
-  const totals = useMemo(() => recomputeTotals(form.items), [form.items]);
-  const withinCaps = totalsWithinCaps(totals);
-
-  function setDishName(value: string) {
-    setForm((prev) => ({ ...prev, dishName: value }));
-  }
-
-  function setNote(value: string) {
-    setForm((prev) => ({ ...prev, note: value }));
-  }
-
-  function setEatenAt(value: Date) {
-    setForm((prev) => ({ ...prev, eatenAt: value }));
-  }
-
-  function setItemField(itemId: string, field: keyof MealItemForm, value: string) {
-    setForm((prev) => ({
-      ...prev,
-      items: prev.items.map((item) => (item.id === itemId ? { ...item, [field]: value } : item)),
-    }));
-  }
-
-  function removeItem(itemId: string) {
-    setForm((prev) => ({ ...prev, items: prev.items.filter((item) => item.id !== itemId) }));
-  }
-
-  function addItem() {
-    setForm((prev) =>
-      prev.items.length >= MAX_ITEMS ? prev : { ...prev, items: appendEmptyItem(prev.items) },
-    );
-  }
-
-  const canSave = !saving && isFormValid(form) && withinCaps;
+  const canSave = !saving && formValid && withinCaps;
 
   async function handleSave() {
     if (saving || !canSave) return; // double-tap guard.

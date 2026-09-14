@@ -18,24 +18,15 @@
  * only for transient kinds; idempotent `conflict` routes to the Saved state
  * (the meal is already saved). Never logs the form/payload (health PII).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { Button, Text } from '@/shared/ui';
 import type { MealAnalysis } from '@/types/nutrition';
 
-import {
-  appendEmptyItem,
-  isFormValid,
-  MAX_ITEMS,
-  recomputeTotals,
-  seedFormFromAnalysis,
-  toSavePayload,
-  totalsWithinCaps,
-  type MealForm,
-  type MealItemForm,
-} from '../lib/meal-form';
+import { seedFormFromAnalysis, toSavePayload } from '../lib/meal-form';
+import { useMealForm } from '../lib/use-meal-form';
 import { saveMeal, type SaveErrorKind } from '../lib/save-meal';
 import { MealEditorForm } from './meal-editor-form';
 
@@ -76,7 +67,18 @@ export function MealReview({
   onLogAnother,
   onSaving,
 }: MealReviewProps) {
-  const [form, setForm] = useState<MealForm>(() => seedFormFromAnalysis(analysis, initialNote));
+  const {
+    form,
+    totals,
+    withinCaps,
+    formValid,
+    setDishName,
+    setNote,
+    setEatenAt,
+    setItemField,
+    removeItem,
+    addItem,
+  } = useMealForm(() => seedFormFromAnalysis(analysis, initialNote));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
   const [saveCanRetry, setSaveCanRetry] = useState(false);
@@ -91,39 +93,7 @@ export function MealReview({
     };
   }, []);
 
-  const totals = useMemo(() => recomputeTotals(form.items), [form.items]);
-  const withinCaps = totalsWithinCaps(totals);
-
-  function setDishName(value: string) {
-    setForm((prev) => ({ ...prev, dishName: value }));
-  }
-
-  function setNote(value: string) {
-    setForm((prev) => ({ ...prev, note: value }));
-  }
-
-  function setEatenAt(value: Date) {
-    setForm((prev) => ({ ...prev, eatenAt: value }));
-  }
-
-  function setItemField(id: string, field: keyof MealItemForm, value: string) {
-    setForm((prev) => ({
-      ...prev,
-      items: prev.items.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
-    }));
-  }
-
-  function removeItem(id: string) {
-    setForm((prev) => ({ ...prev, items: prev.items.filter((item) => item.id !== id) }));
-  }
-
-  function addItem() {
-    setForm((prev) =>
-      prev.items.length >= MAX_ITEMS ? prev : { ...prev, items: appendEmptyItem(prev.items) },
-    );
-  }
-
-  const canSave = !saving && isFormValid(form) && withinCaps;
+  const canSave = !saving && formValid && withinCaps;
 
   async function handleSave() {
     if (saving || !canSave) return; // double-tap guard.
