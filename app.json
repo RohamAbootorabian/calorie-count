@@ -47,7 +47,8 @@
           "cameraPermission": "Calorie Counter needs camera access so you can snap a meal."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

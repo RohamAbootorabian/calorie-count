@@ -27,6 +27,8 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
+import { useUser } from '@/lib/auth';
+import { reconcile } from '@/features/notifications/lib/notification-service';
 import { Button, Card, Input, Screen, Text } from '@/shared/ui';
 import type { MealAnalysis } from '@/types/nutrition';
 
@@ -100,6 +102,7 @@ type CaptureError = { message: string; canRetry: boolean; phase: 'upload' | 'ana
 
 export function CaptureScreen() {
   const router = useRouter();
+  const { user } = useUser();
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
   const [uploadedPath, setUploadedPath] = useState<string | null>(null);
 
@@ -324,6 +327,10 @@ export function CaptureScreen() {
               onLogAnother={chooseAnother}
               onSaving={(path) => {
                 savedPath.current = path;
+              }}
+              onSaved={() => {
+                // Re-arm reminders now this meal is committed (plan 0040).
+                if (user?.id) void reconcile(user.id);
               }}
             />
           ) : (

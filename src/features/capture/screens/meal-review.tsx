@@ -42,6 +42,12 @@ type MealReviewProps = {
    * unmount between commit and ack could drop a post-success callback.
    */
   onSaving?: (path: string) => void;
+  /**
+   * Fired AFTER the save RPC resolves as saved (ok or idempotent conflict) — plan 0040.
+   * The parent re-arms meal reminders so the just-satisfied window's nudge is cancelled.
+   * Post-commit, so a reconcile requery sees the new row (no read-after-write race).
+   */
+  onSaved?: () => void;
 };
 
 /** Friendly copy + whether a bare retry can ever succeed, per save error kind. */
@@ -66,6 +72,7 @@ export function MealReview({
   initialNote,
   onLogAnother,
   onSaving,
+  onSaved,
 }: MealReviewProps) {
   const {
     form,
@@ -113,6 +120,7 @@ export function MealReview({
     if (result.ok || result.kind === 'conflict') {
       setSaved(true);
       setSaving(false);
+      onSaved?.(); // re-arm reminders now that this window is satisfied (plan 0040).
       return;
     }
     const { message, canRetry } = saveErrorCopy(result.kind);

@@ -1892,3 +1892,39 @@ This completes the tech-debt section (0037 useMealForm + 0038 useOwnedMealRows).
   component the user named).
 
 **Verified.** tsc 0; expo lint 0; full web export success. Pure client refactor — JS-only (reload).
+
+---
+
+## 2026-09-14 — Plan 0040: smart meal reminders (local notifications)
+
+**What we did**
+- Added opt-in **smart meal reminders**: up to three daily nudges (breakfast/lunch/dinner) that fire
+  ONLY if no meal was logged in that reminder's window today, controlled from a new Settings →
+  Reminders section (master on/off + editable times via a new `TimeField`).
+- LOCAL notifications only (`expo-notifications`) — no push tokens, no server. The "smart" behavior is
+  achieved by scheduling single-fire DATE triggers and RECONCILING them (cancel + re-arm) on app
+  foreground, after a successful meal save/edit, and on settings change. Since every meal log happens
+  in-app, each log is a code point where we cancel that window's pending nudge → a reminder fires iff
+  the window is still unlogged by its time. No backend, and privacy-preserving.
+
+**Key decisions & why**
+- **Local + reconcile, not server push** — genuinely sufficient for "only when not logged" and needs no
+  Expo push tokens / cron; also keeps eating patterns off any server path.
+- **Device-local wall-clock** for firing (a 9am nudge fires at 9am wherever the phone is), deliberately
+  divergent from the dashboard's profile-tz bucketing; also sidesteps the Hermes/full-ICU `timeZone`
+  caveat.
+- **Prefs in AsyncStorage keyed by userId** — notifications are per-device, so prefs don't sync to
+  Supabase; account-isolated on a shared device; fail-safe to defaults (OFF).
+- **Privacy:** reminder labels are a CLOSED ENUM (never free text), the body is a fixed string + label,
+  `data` carries only `{kind}`; the only DB read is an owner-filtered `select('eaten_at')` typed
+  allowlist; nothing logs prefs/meals/errors.
+
+**Review (4 agents): 1 BLOCKER + 11 SHOULD-FIX, all resolved before code.** Serialize `reconcile`
+(promise chain) so overlapping triggers can't double-schedule (B1); reconcile-after-save fires
+POST-commit via a new `onSaved` (R1); web-guard the top-level `setNotificationHandler` + `.web.tsx`
+TimeField (R2); SDK-56 handler fields `shouldShowBanner`/`shouldShowList` (R3); sort+dedupe times (R4);
+detect revoked permission (R5); leak-safe cancel-aborts-schedule (R6); barrel export (R7); AppState
+`'active'` only (R8); closed-enum labels (R9); no PII logging (R10); typed `eaten_at` allowlist (R11).
+
+**Verified.** tsc 0; expo lint 0; full web export success (native module stays out of the web bundle).
+Adds `expo-notifications`, but local notifications run in Expo Go on iOS → test via reload, no dev build.

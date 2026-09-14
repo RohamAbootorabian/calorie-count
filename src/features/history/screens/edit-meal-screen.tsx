@@ -23,9 +23,11 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
+import { reconcile } from '@/features/notifications/lib/notification-service';
 import { seedFormFromMealLog, toSavePayload } from '@/features/capture/lib/meal-form';
 import { useMealForm } from '@/features/capture/lib/use-meal-form';
 import { MealEditorForm } from '@/features/capture/screens/meal-editor-form';
+import { useUser } from '@/lib/auth';
 import { Button, Screen, Text } from '@/shared/ui';
 
 import { useMealDetail } from '../lib/use-meal-detail';
@@ -98,6 +100,7 @@ function MealEditor({ id, detail }: { id: string; detail: NonNullable<ReturnType
     removeItem,
     addItem,
   } = useMealForm(() => seedFormFromMealLog(detail.log, detail.items));
+  const { user } = useUser();
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
   const [saveCanRetry, setSaveCanRetry] = useState(false);
@@ -125,6 +128,8 @@ function MealEditor({ id, detail }: { id: string; detail: NonNullable<ReturnType
 
     if (!mounted.current) return;
     if (result.ok) {
+      // Editing eaten_at can move a meal in/out of a reminder window (plan 0040).
+      if (user?.id) void reconcile(user.id);
       router.back(); // History refetches on focus → shows the new values.
       return;
     }

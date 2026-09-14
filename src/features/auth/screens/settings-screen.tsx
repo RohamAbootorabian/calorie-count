@@ -32,6 +32,8 @@ import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database';
 import { Button, Card, Input, Screen, Text } from '@/shared/ui';
 
+import { RemindersSection } from '@/features/notifications/components/reminders-section';
+
 import { HealthQuestion } from '../components/health-question';
 import { SelectGroup } from '../components/select-group';
 import {
@@ -779,7 +781,10 @@ export function SettingsScreen() {
         )}
       </Card>
 
-      {/* 3. Legal ---------------------------------------------------------- */}
+      {/* 3. Reminders (plan 0040) ----------------------------------------- */}
+      <RemindersSection />
+
+      {/* 4. Legal ---------------------------------------------------------- */}
       <Card style={styles.section}>
         <Text type="smallBold" themeColor="textSecondary">
           Legal
@@ -789,7 +794,7 @@ export function SettingsScreen() {
         </Text>
       </Card>
 
-      {/* 4. Sign out ------------------------------------------------------- */}
+      {/* 5. Sign out ------------------------------------------------------- */}
       <Card style={styles.section}>
         <Button variant="danger" onPress={handleSignOut} fullWidth>
           Sign out
