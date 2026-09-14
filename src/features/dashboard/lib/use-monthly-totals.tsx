@@ -24,24 +24,12 @@
  * SECURITY: explicit in-code `.eq('user_id', userId)`. PRIVACY: strict `Pick<>`
  * allowlist (never `select('*')`); never log a row, a metric, the tz, or the error.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
-import { useUser } from '@/lib/auth';
-import { supabase } from '@/lib/supabase';
-import type { Database } from '@/types/database';
+import { useMemo } from 'react';
 
 import { aggregateMonth, zeroWeeks, type MonthWeek } from './month-weeks';
 import type { ConsumedMacros } from './plan-progress';
 import { useCurrentDayKey } from './use-current-day-key';
-
-/** Only the columns we sum — typed allowlist (over-fetch = compile error). */
-type MealRow = Pick<
-  Database['public']['Tables']['meal_logs']['Row'],
-  'eaten_at' | 'total_calories' | 'total_protein' | 'total_carbs' | 'total_fat'
->;
-
-/** Keep in sync with `MealRow`; MUST NOT include confidence/quality_factors/etc. */
-const SELECT_COLUMNS = 'eaten_at, total_calories, total_protein, total_carbs, total_fat';
+import { useOwnedMealRows } from './use-owned-meal-rows';
 
 const WINDOW_MS = 33 * 24 * 60 * 60 * 1000; // ≥ a 31-day month-to-date + DST cushion (see header).
 
@@ -62,63 +50,17 @@ export type MonthlyTotalsStatus = {
 const ZERO_CONSUMED: ConsumedMacros = { calories: 0, protein: 0, carbs: 0, fat: 0 };
 
 export function useMonthlyTotals(tz: string): MonthlyTotalsStatus {
-  const { user } = useUser();
-  const userId = user?.id ?? null;
-
-  const [reloadKey, setReloadKey] = useState(0);
-  const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
+  const { rows, loading, error, refetch } = useOwnedMealRows(WINDOW_MS);
 
   // Live "today" (plan 0023) — advances at local midnight / on resume so the month
   // prefix + elapsed re-derive without a refetch. Feeds the sum memo ONLY.
   const todayKey = useCurrentDayKey(tz);
   const elapsed = Number(todayKey.slice(8, 10)) || 0; // DD of YYYY-MM-DD (explicit, not a locale parse).
 
-  type Outcome =
-    | { userId: string; reloadKey: number; kind: 'ok'; rows: MealRow[] }
-    | { userId: string; reloadKey: number; kind: 'error' };
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
-
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!userId) return;
-    let active = true;
-    const attempt = reloadKey;
-    const sinceIso = new Date(Date.now() - WINDOW_MS).toISOString();
-
-    supabase
-      .from('meal_logs')
-      .select(SELECT_COLUMNS)
-      .eq('user_id', userId) // mandatory in-code owner filter (defense-in-depth + index).
-      .gte('eaten_at', sinceIso)
-      .then(({ data, error }) => {
-        if (!active || !mounted.current) return;
-        setOutcome(
-          error || data == null
-            ? { userId, reloadKey: attempt, kind: 'error' }
-            : { userId, reloadKey: attempt, kind: 'ok', rows: data as unknown as MealRow[] },
-        );
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [userId, reloadKey]);
-
-  // Only the freshest OK rows for THIS (user, attempt) feed the sum.
-  const rows =
-    outcome?.userId === userId && outcome.reloadKey === reloadKey && outcome.kind === 'ok'
-      ? outcome.rows
-      : null;
-
   // Re-aggregates whenever tz or the day/month rolls (todayKey) — no refetch. The
   // per-row bucketing + month-to-date sum live in the pure `aggregateMonth` helper.
+  // `rows` is null while loading/error/signed-out → zeroed consumed/weeks (but
+  // `elapsed` + `zeroWeeks(todayKey)` still re-derive on a rollover, via `todayKey`).
   const agg = useMemo(
     () =>
       rows
@@ -127,26 +69,13 @@ export function useMonthlyTotals(tz: string): MonthlyTotalsStatus {
     [rows, tz, todayKey],
   );
 
-  return useMemo<MonthlyTotalsStatus>(() => {
-    const empty = {
-      consumed: ZERO_CONSUMED,
-      elapsed,
-      mealCount: 0,
-      weeks: zeroWeeks(todayKey),
-    };
-    if (!userId) return { loading: false, error: false, refetch, ...empty };
-    const fresh =
-      outcome?.userId === userId && outcome.reloadKey === reloadKey ? outcome : null;
-    if (!fresh) return { loading: true, error: false, refetch, ...empty };
-    if (fresh.kind === 'error') return { loading: false, error: true, refetch, ...empty };
-    return {
-      loading: false,
-      error: false,
-      refetch,
-      consumed: agg.consumed,
-      elapsed,
-      mealCount: agg.mealCount,
-      weeks: agg.weeks,
-    };
-  }, [userId, reloadKey, outcome, agg, elapsed, todayKey, refetch]);
+  return {
+    loading,
+    error,
+    refetch,
+    consumed: agg.consumed,
+    elapsed,
+    mealCount: agg.mealCount,
+    weeks: agg.weeks,
+  };
 }

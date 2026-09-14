@@ -1840,3 +1840,30 @@ behavior-preserving (lazy init, pure totals, non-memoized child, functional setF
 folded in.
 
 **Verified.** tsc 0; expo lint 0; full web export 0. Pure client refactor — JS-only (reload).
+
+## 2026-09-14 — Plan 0038 executed: extract useOwnedMealRows (DRY the three totals hooks)
+
+**What.** Pure refactor: the identical fetch + lifecycle scaffolding triplicated across
+useDailyTotals (48h) / useWeeklyTotals (8d) / useMonthlyTotals (33d) now lives once in
+`useOwnedMealRows(windowMs)`. Each period hook keeps only its own window + aggregation. No
+behavior/UI change.
+
+**How.** New `src/features/dashboard/lib/use-owned-meal-rows.tsx` owns the `OwnedMealRow`/
+`SELECT_COLUMNS` allowlist + the `.eq('user_id')`/`.gte('eaten_at', now-windowMs)` fetch + the
+`mounted`/`active`/`(userId, reloadKey)` outcome, returning `{ rows, loading, error, refetch }` —
+signed-out ⇒ `{rows:null, loading:false, error:false}` (exact formulas: `loading = !!userId &&
+!fresh`), rows by reference. The three hooks call it and keep their aggregation `useMemo`
+(tz/todayKey), empties, and public status shape verbatim; monthly keeps `elapsed`/`zeroWeeks(
+todayKey)` on `todayKey` so rollover still updates the empty branches.
+
+**Why it matters.** The load-bearing owner filter + privacy allowlist + sign-out guard + stale-answer
+key were copied 3× — exactly where a copy-paste divergence would be a silent leak/loading bug. Now
+one source.
+
+**Review.** Two-agent review (equivalence+security + architecture). APPROVED, no blockers. Folded:
+the signed-out `loading:false` contract, monthly-rollover deps, rows-by-reference, plain-object
+return, and `use-meal-history`/`use-daily-goals` explicitly considered-and-excluded. Did NOT dedup
+the three separate reads into one fetch (would change refetch semantics — out of scope).
+
+**Verified.** tsc 0; expo lint 0; full web export 0. Pure client refactor — JS-only (reload).
+This completes the tech-debt section (0037 useMealForm + 0038 useOwnedMealRows).
