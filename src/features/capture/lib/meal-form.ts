@@ -27,6 +27,9 @@ export const MAX_CALORIES = 100000;
 export const MAX_MACRO = 10000; // protein/carbs/fat/sugar/fiber
 export const MAX_SODIUM = 1000000; // mg
 export const NAME_MAX = 200;
+/** Max items per meal — MIRRORS the `create_meal_log`/`update_meal_log` RPC check
+ *  (`item count 1..50` → 23514). The "Add item" button disables at this count. */
+export const MAX_ITEMS = 50;
 // Meal note cap (plan 0020). SYNC-SET with the edge function's code-point slice
 // AND the DB `meal_logs_note_len` check (all three are `500`; move together).
 export const NOTE_MAX = 500;
@@ -120,6 +123,41 @@ export function seedFormFromAnalysis(analysis: MealAnalysis, initialNote = ''): 
       sodium: item.nutrients.sodium,
     })),
   };
+}
+
+/**
+ * A blank, editable item (plan 0036 — manual "Add item"). Editable fields empty
+ * (so nothing reads as a spurious 0 and `validateItem` flags it until filled);
+ * carried non-editable nutrients default to 0 (v1 doesn't edit sugar/fiber/sodium).
+ */
+export function emptyMealItem(id: string): MealItemForm {
+  return {
+    id,
+    name: '',
+    calories: '',
+    protein: '',
+    carbs: '',
+    fat: '',
+    portion: '',
+    estimatedGrams: 0,
+    sugar: 0,
+    fiber: 0,
+    sodium: 0,
+  };
+}
+
+/**
+ * Append a blank item with a guaranteed-unique id. INVARIANT: seed ids are
+ * digit-only (`'0'..'n'` from both seeders), so a `new-<n>` id can never collide
+ * with a seed id — only with a prior added item. We scan ALL current ids and bump
+ * `n` from 0 until free (NEVER derive `n` from `items.length`/a counter — that
+ * re-collides after a remove). Pure, non-mutating.
+ */
+export function appendEmptyItem(items: MealItemForm[]): MealItemForm[] {
+  const used = new Set(items.map((item) => item.id));
+  let n = 0;
+  while (used.has(`new-${n}`)) n++;
+  return [...items, emptyMealItem(`new-${n}`)];
 }
 
 /**

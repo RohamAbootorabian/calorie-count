@@ -1790,3 +1790,33 @@ parsing; re-seed on toggle. RLS/PII/cost confirmed clean; is_custom is the robus
 one column — no function deploy. Reload picks it up.
 **Pending:** user device-verify (toggle custom, set 2200/180/200/70 → dashboards use it; reopen
 Settings → still custom with same numbers; toggle back → computed; out-of-range/decimal blocked).
+
+## 2026-09-14 — Plan 0036 executed: manually add a meal item (create + edit)
+
+**What.** The meal review/edit card can now ADD an item (previously only edit/remove). "Add item"
+appends a blank editable row (name + calories/protein/carbs/fat); totals recompute live; Save stays
+disabled until the new item is valid; capped at 50 items (the RPC's 1..50 limit).
+
+**How.**
+- `meal-form.ts`: `MAX_ITEMS=50` (mirrors both RPCs' `1..50` check), `emptyMealItem(id)` (blank
+  editable fields, carried sugar/fiber/sodium=0), `appendEmptyItem(items)` — unique `new-<n>` id via
+  a `Set` of existing ids (never `length`/counter → no re-collision after a remove; seed ids are
+  digit-only so `new-*` never cross-collides; invariant documented).
+- `meal-editor-form.tsx`: `onAddItem` prop + a secondary "Add item" button below the list (disabled
+  + "Up to 50 items per meal." note at the cap); placeholders on the item inputs so a blank row
+  reads as "fill me".
+- `meal-review.tsx` + `edit-meal-screen.tsx`: symmetric `addItem` handler (functional cap guard) +
+  `onAddItem` prop.
+
+**Why safe.** A blank item is invalid (`validateItem`) → `isFormValid` false → Save disabled → it
+never reaches `toSavePayload`, so no NaN can hit the RPC. Lower bound (≥1) already enforced;
+disable-at-50 mirrors the upper bound → no `23514`.
+
+**Review.** Two-agent review. APPROVED, no blockers. Folded NITs: Set-based unique id (not length),
+input placeholders, cap note only at 50, secondary button. Shared `useMealForm` hook to DRY the six
+handlers noted as a separate out-of-scope cleanup.
+
+**Verified.** tsc 0; expo lint 0; full web export 0. Pure client change — no migration/secret/
+deploy; JS-only (reload).
+**Pending:** user device-verify (create + edit): Add item → fill → totals update, Save enables,
+persists; add to 50 → disabled + note; add then remove → stable.

@@ -24,7 +24,9 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import {
+  appendEmptyItem,
   isFormValid,
+  MAX_ITEMS,
   recomputeTotals,
   seedFormFromMealLog,
   toSavePayload,
@@ -134,6 +136,12 @@ function MealEditor({ id, detail }: { id: string; detail: NonNullable<ReturnType
     setForm((prev) => ({ ...prev, items: prev.items.filter((item) => item.id !== itemId) }));
   }
 
+  function addItem() {
+    setForm((prev) =>
+      prev.items.length >= MAX_ITEMS ? prev : { ...prev, items: appendEmptyItem(prev.items) },
+    );
+  }
+
   const canSave = !saving && isFormValid(form) && withinCaps;
 
   async function handleSave() {
@@ -185,6 +193,7 @@ function MealEditor({ id, detail }: { id: string; detail: NonNullable<ReturnType
           onDishChange={setDishName}
           onItemChange={setItemField}
           onRemoveItem={removeItem}
+          onAddItem={addItem}
           onNoteChange={setNote}
           onDateChange={setEatenAt}
           totals={totals}

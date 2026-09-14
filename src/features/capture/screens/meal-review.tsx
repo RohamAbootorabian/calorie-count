@@ -26,7 +26,9 @@ import { Button, Text } from '@/shared/ui';
 import type { MealAnalysis } from '@/types/nutrition';
 
 import {
+  appendEmptyItem,
   isFormValid,
+  MAX_ITEMS,
   recomputeTotals,
   seedFormFromAnalysis,
   toSavePayload,
@@ -115,6 +117,12 @@ export function MealReview({
     setForm((prev) => ({ ...prev, items: prev.items.filter((item) => item.id !== id) }));
   }
 
+  function addItem() {
+    setForm((prev) =>
+      prev.items.length >= MAX_ITEMS ? prev : { ...prev, items: appendEmptyItem(prev.items) },
+    );
+  }
+
   const canSave = !saving && isFormValid(form) && withinCaps;
 
   async function handleSave() {
@@ -166,6 +174,7 @@ export function MealReview({
         onDishChange={setDishName}
         onItemChange={setItemField}
         onRemoveItem={removeItem}
+        onAddItem={addItem}
         onNoteChange={setNote}
         onDateChange={setEatenAt}
         totals={totals}

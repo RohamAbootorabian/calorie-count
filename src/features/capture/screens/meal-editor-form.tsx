@@ -17,6 +17,7 @@ import { Button, Card, DateField, Input, Text } from '@/shared/ui';
 import type { Nutrients } from '@/types/nutrition';
 
 import {
+  MAX_ITEMS,
   NOTE_MAX,
   validateDishName,
   validateEatenAt,
@@ -31,6 +32,8 @@ export type MealEditorFormProps = {
   onDishChange: (value: string) => void;
   onItemChange: (id: string, field: keyof MealItemForm, value: string) => void;
   onRemoveItem: (id: string) => void;
+  /** Append a blank item (plan 0036). */
+  onAddItem: () => void;
   /** Controlled note handler (plan 0020) — mirrors `onDishChange`. */
   onNoteChange: (value: string) => void;
   /** Controlled meal-date handler (plan 0028). */
@@ -44,6 +47,7 @@ export function MealEditorForm({
   onDishChange,
   onItemChange,
   onRemoveItem,
+  onAddItem,
   onNoteChange,
   onDateChange,
   totals,
@@ -122,6 +126,20 @@ export function MealEditorForm({
         </Text>
       ) : null}
 
+      {/* Add item (plan 0036) — capped at the RPC's 50-item limit. */}
+      <Button
+        variant="secondary"
+        onPress={onAddItem}
+        disabled={form.items.length >= MAX_ITEMS}
+        fullWidth>
+        Add item
+      </Button>
+      {form.items.length >= MAX_ITEMS ? (
+        <Text type="small" themeColor="textSecondary">
+          Up to {MAX_ITEMS} items per meal.
+        </Text>
+      ) : null}
+
       {/* Live totals -------------------------------------------------------- */}
       <Card>
         <Text type="smallBold" themeColor="textSecondary">
@@ -183,6 +201,7 @@ function ItemRow({
         value={item.name}
         onChangeText={(value) => onChange('name', value)}
         error={errors.name}
+        placeholder="e.g. Apple"
       />
 
       <View style={styles.nutrientGrid}>
@@ -193,6 +212,7 @@ function ItemRow({
             onChangeText={(value) => onChange('calories', value)}
             error={errors.calories}
             keyboardType="decimal-pad"
+            placeholder="0"
           />
         </View>
         <View style={styles.nutrientCell}>
@@ -202,6 +222,7 @@ function ItemRow({
             onChangeText={(value) => onChange('protein', value)}
             error={errors.protein}
             keyboardType="decimal-pad"
+            placeholder="0"
           />
         </View>
         <View style={styles.nutrientCell}>
@@ -211,6 +232,7 @@ function ItemRow({
             onChangeText={(value) => onChange('carbs', value)}
             error={errors.carbs}
             keyboardType="decimal-pad"
+            placeholder="0"
           />
         </View>
         <View style={styles.nutrientCell}>
@@ -220,6 +242,7 @@ function ItemRow({
             onChangeText={(value) => onChange('fat', value)}
             error={errors.fat}
             keyboardType="decimal-pad"
+            placeholder="0"
           />
         </View>
       </View>
