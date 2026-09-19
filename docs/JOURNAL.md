@@ -1948,3 +1948,52 @@ had been skipped for weeks. Anyone orienting from the plan headers or the handof
 "open" plans and a month-old next step. No code changed.
 
 **Open follow-up:** the two-user RLS proof from plan 0001 is now next step #1 in the handoff.
+
+---
+
+## 2026-09-19 — Plan 0041 executed: two-user RLS isolation proof (closes 0001's deferred test)
+
+**What we did**
+- Added `scripts/check-rls.ts`, a re-runnable prod harness. It creates two throwaway users (A
+  attacks, B is the victim) and runs 67 attacks through the real public APIs: PostgREST (6 tables),
+  the RPCs, Storage (17 cases), `analyze-meal` and anon. Every case is judged against an exact
+  expected-denial allowlist **plus** a service-role before/after snapshot of B's state.
+- A `--self-test` mode makes B attack itself. All 48 self-testable cases came out FAIL, which
+  proves the harness can see a leak on every surface it tests.
+- The real run gave **64 PASS, 3 FAIL, 0 INVALID**. A read-only SQL inventory confirmed:
+  - RLS is on for every `public` table, and there are no views;
+  - the bucket is private;
+  - no table is in the realtime publication;
+  - only the expected functions are executable;
+  - 0 leftover test users.
+
+**The finding (why 0042 is next)**
+All three FAILs are the hole the review predicted (B1). `create_meal_log` enforces
+`image_path` ∈ `auth.uid()/…`, but the `meal_logs` INSERT/UPDATE policies check only `user_id`,
+and direct table writes are allowed. So a signed-in user can go around the RPC and do three
+things:
+- plant a row pointing at another user's photo path. That user's later save of that photo
+  silently returns NULL, and the orphan sweep never removes the photo.
+- learn whether a given path exists (a `23505` response);
+- repoint their own row into someone else's folder.
+
+No one's data can be read this way, and paths are random UUIDs, but it is a real cross-user
+write. The fix goes in its own plan (0042), as the user decided before the run.
+
+**Key decisions & why**
+- **Real HTTP, not SQL `set role`:** the attacker's path runs through PostgREST, Storage and the
+  Edge Function, and each of those has its own checks.
+- **Service-role seeding and a reset after every FAIL:** one hole can't cascade into later cases.
+- **Guarded teardown:**
+  - a hard-coded project ref;
+  - the email regex is re-checked before every delete;
+  - storage is only removed under a verified uid folder;
+  - signal handlers run teardown on Ctrl-C;
+  - a startup self-heal and `--sweep` clean up leftovers.
+
+  This mattered in practice: a TLS drop interrupted the first real run and left 2 synthetic
+  users behind, which `--sweep` then removed. After that we added a retrying fetch.
+- **Native `node --env-file` instead of `npx tsx`:** no unpinned download runs with the service
+  key in its environment.
+
+**Verified.** tsc 0; expo lint 0; self-test 48/48; real run 64/3/0; inventory clean; 0 leftovers.

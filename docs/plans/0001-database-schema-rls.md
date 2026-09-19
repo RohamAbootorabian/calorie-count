@@ -1,6 +1,6 @@
 # Plan: Database schema + Row-Level Security (Phase A foundation)
 
-- **Status**: **Done** (executed 2026-06-19; two-user RLS isolation proof still open — see Execution log)
+- **Status**: **Done** (executed 2026-06-19; two-user RLS isolation proof closed by plan 0041 on 2026-09-19)
 - **Created**: 2026-06-19
 - **Plan #**: 0001
 

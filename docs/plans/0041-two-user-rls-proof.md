@@ -1,6 +1,6 @@
 # Plan: Two-user RLS isolation proof (closes plan 0001's deferred test)
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** (3 blockers + should-fixes resolved in body) → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (B1 hole confirmed → plan 0042)
 - **Created**: 2026-09-19
 - **Plan #**: 0041
 
@@ -46,7 +46,7 @@ uses SQL only for the inventory check and for teardown verification.
 
 ### Runner and env (S1, S3)
 - Run command, used exactly as written:
-  `SUPABASE_SERVICE_ROLE_KEY="$(npx --no-install supabase projects api-keys --project-ref vldpfoczswakghkrkyrm -o json | jq -r '.[]|select(.name=="service_role").api_key')" node --env-file=.env scripts/check-rls.ts [--self-test]`
+  `SUPABASE_SERVICE_ROLE_KEY="$(npx --no-install supabase projects api-keys --project-ref vldpfoczswakghkrkyrm -o json | jq -r '.[]|select(.name=="service_role").api_key')" node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --env-file=.env scripts/check-rls.ts [--self-test | --sweep]`
 - Node 24 strips the types natively, so no `tsx` download and no new dependency.
   `--env-file` loads the URL and anon key.
 - Never run the CLI without the `$(…)` capture, and never `echo`/`env` in that shell.
@@ -417,5 +417,57 @@ consolidated and deduped; the tags show which reviewers raised each one.
   - `handle_new_user` fires on `admin.createUser`.
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+**2026-09-19 — Executed against prod. Isolation holds everywhere except the predicted B1 hole.**
+
+**Deviations from the plan (and why)**
+- **Seed through the service role, not B's own client.** A single `resetData()` wipes and re-seeds
+  both users after any case that changed the victim's state, so one hole cannot cascade into later
+  cases. Owner visibility is still proven through the users' own JWT clients (positive controls).
+- **Per-case snapshot + reset.** A service-role snapshot is taken before and after every case. A
+  diff counts as FAIL and triggers a reset, so each verdict is attributable to one case.
+- **`--sweep` + retrying fetch.** The first real run hit a TLS drop (`ECONNRESET`) mid-run. The
+  snapshot threw, so the run was correctly INVALID, but teardown also lost the network and left the
+  2 test users (synthetic data only) on prod. Two fixes followed:
+  - a `--sweep` mode (the same guarded purge, any age); it removed both users;
+  - a fetch wrapper that retries connection-level failures (3 tries).
+
+  supabase-js's own `console.error` output is now routed through `redact()`.
+- **Seed items:** `.order('position')` on an insert-returning select gave `42703`. It now selects
+  `id, position` and picks position 0.
+- **Run command** adds `--disable-warning=MODULE_TYPELESS_PACKAGE_JSON`, because `package.json`
+  has no `"type"` and Node re-parses the file as ESM. The warning is cosmetic.
+
+**Verification**
+- tsc 0, `expo lint` 0.
+- **`--self-test`: 48/48 self-testable cases FAIL** (B attacking itself is detected on every case).
+  The harness can see a leak on every surface it tests.
+- **Real run (A → B): 67 cases. PASS 64, FAIL 3, INVALID 0.** Teardown removed both users. The
+  three FAILs are exactly B1:
+  ```
+  FAIL  meal_logs.B1-insert-own-row-fresh-victim-path     [no error; victim state CHANGED]
+  FAIL  meal_logs.B1-insert-own-row-existing-victim-path  [leak 23505]
+  FAIL  meal_logs.B1-patch-own-image_path-to-victim       [no error; victim state CHANGED]
+  ```
+  Everything else is denied with the expected code:
+  - profiles, goals, meal_logs, meal_items, analyze_usage and cleanup_run for select, HEAD count,
+    update, delete, insert and upsert, plus re-parenting (`42501` or 0 rows);
+  - the RPCs (`P0002`, `23514`+namespace msg, `42501`; `user_id` in the payload is ignored;
+    `bump` only moves the caller's own counter);
+  - trigger functions (`PGRST202`, not exposed);
+  - all 17 storage cases (RLS / object-not-found; B's uid is not visible from the root);
+  - `analyze-meal` (4 × `not_found`);
+  - anon.
+- **SQL inventory** (Management API, read-only):
+  - RLS is on for every `public` table, and there are no views.
+  - `meal-photos` is the only bucket, with `public=false`.
+  - No `public` table is in `supabase_realtime`.
+  - 0 leftover test users or orphan test objects.
+  - Executable by `authenticated`: `bump_analyze_usage, create_meal_log, update_meal_log` plus
+    the trigger functions `handle_new_user, set_updated_at` (default grant). The trigger functions
+    are also executable by `anon`, but PostgREST doesn't expose them (`PGRST202`, proven above).
+  - Hardening option for 0042: revoke them anyway.
+
+**Outcome:** plan 0001's deferred two-user proof is **closed**. The B1 hole (direct `meal_logs`
+writes bypass `create_meal_log`'s `image_path` namespace check) is confirmed on prod and moves to
+**plan 0042**. The script stays in the repo as a regression check: after 0042, the three B1 cases
+must turn PASS.

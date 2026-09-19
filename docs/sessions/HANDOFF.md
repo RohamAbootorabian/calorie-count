@@ -3,13 +3,13 @@
 
 # Handoff → Next Session
 
-_Last updated: 2026-09-19 (docs-reconciliation session)_
+_Last updated: 2026-09-19 (docs reconciliation + plan 0041 RLS proof)_
 
 ## Where we are
-**Plans 0001–0040 are all executed and pushed** (0017 abandoned). Latest shipped feature =
-**plan 0040, smart meal reminders** (local notifications). Tree clean, `npx tsc --noEmit` passes.
-This session made no code changes: it was a docs cleanup. The previous handoff was stale
-(session 18, pointing at plan 0018), so read `docs/JOURNAL.md` for the 0018→0040 history.
+**Plans 0001–0041 are all executed and pushed** (0017 abandoned). Latest app feature = **plan
+0040, smart meal reminders**. Latest work = **plan 0041, the two-user RLS proof on prod**. Result:
+64 PASS / 3 FAIL. The 3 FAILs are one real hole (B1, below), and **plan 0042 is next to fix it**.
+Tree clean; tsc and lint pass.
 
 ## What changed recently
 - **Plans 0018–0028** — weekly/monthly trends, goal line, plan-progress rings, device-timezone
@@ -21,13 +21,26 @@ This session made no code changes: it was a docs cleanup. The previous handoff w
 - **Plan 0040** — opt-in breakfast/lunch/dinner reminders that fire only if that window is
   unlogged (local `expo-notifications`, reconcile on foreground/save/settings; prefs in
   AsyncStorage per user).
+- **Plan 0041 (2026-09-19)** — added `scripts/check-rls.ts`, a re-runnable prod isolation harness
+  (67 attacks, `--self-test`, `--sweep`, guarded teardown). Plan 0001's deferred proof is now
+  closed. The run command is in the script header.
+- **Local move fix (2026-09-19)** — the project moved to `Desktop/Projects/calorie-count`. The
+  stale absolute paths in `ios/Pods`, `node_modules/expo-modules-jsi/apple/.DerivedData` and a
+  long-running Metro were all rebuilt or restarted. If a native build complains about
+  `Desktop/calorie-count`, that's the cause.
 - **Docs reconciliation (2026-09-19)** — the Status line had never been flipped to Done for 0001 and
   0029–0038; all fixed. Also fixed 0031's migration filename and the project path in CLAUDE.md.
 
 ## Next steps (pick up here)
-1. **Two-user RLS isolation proof** (security; deferred since plan 0001, never recorded as done).
-   Go through `/plan` first: with two test accounts on prod, prove that A cannot read, update, or
-   delete B's rows in every table or B's objects in the `meal-photos` bucket.
+1. **Plan 0042: close the `image_path` namespace hole (B1).**
+   - **The hole:** the `meal_logs` INSERT/UPDATE policies check only `user_id`, so direct table
+     writes bypass `create_meal_log`'s `split_part(image_path,'/',1) = auth.uid()` check.
+   - **Fix direction:** a migration adding `image_path is null or split_part(image_path,'/',1) =
+     auth.uid()::text` to the `meal_logs_insert`/`meal_logs_update` WITH CHECK, or column grants.
+     Optionally also revoke EXECUTE on the trigger functions `handle_new_user`/`set_updated_at`
+     from anon/authenticated.
+   - **Verify:** rerun `scripts/check-rls.ts`; the 3 `meal_logs.B1-*` cases must turn PASS and
+     the rest stay PASS.
 2. **Real-iPhone verification pass.** Many plans are "user device-verify pending" (0018–0036, see
    the JOURNAL "Pending" lines) plus 0040 reminders, native `Intl` tz on Hermes (0014/0022),
    `cacheKey` (0013), 0007 camera, 0012 delete confirm.
