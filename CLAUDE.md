@@ -39,7 +39,7 @@ Every feature or task — however small — goes through this pipeline. Never sk
 ## Git
 - **Commit straight to `main` and push.** No PRs.
 - **Claude owns all git operations** — the user should never need to run git themselves.
-- End every commit message with: `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`
+- End every commit message with: `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`
 
 ## Architecture rules
 - The phone **NEVER** calls the AI provider directly. Photo → Supabase Edge Function → OpenAI (GPT-4o-mini vision) → structured `MealAnalysis` → phone. AI keys live ONLY in Edge Function secrets.
