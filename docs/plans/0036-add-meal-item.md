@@ -1,6 +1,6 @@
 # Plan: Manually add a meal item (create + edit flows)
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-09-14
 - **Plan #**: 0036
 

@@ -1,6 +1,6 @@
 # Plan: Collect allergies + conditions during Onboarding
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-09-14
 - **Plan #**: 0034
 

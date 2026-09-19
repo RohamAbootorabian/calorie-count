@@ -1,6 +1,6 @@
 # Plan: Merge Upload into a single "Analyze meal" button
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-09-13
 - **Plan #**: 0029
 

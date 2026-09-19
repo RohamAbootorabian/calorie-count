@@ -1,6 +1,6 @@
 # Plan: Extract `useMealForm` (DRY the meal-form handlers)
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-09-14
 - **Plan #**: 0037
 

@@ -48,4 +48,4 @@ Every feature or task — however small — goes through this pipeline. Never sk
 
 ## Toolchain
 - Node is installed via **nvm**. If `node`/`npm` aren't found in a fresh shell, run `source ~/.zshrc` first.
-- Run all commands from the project root: `/Users/roham_abt/Desktop/calorie count` (note the space in the path — quote it).
+- Run all commands from the project root: `/Users/roham_abt/Desktop/Projects/calorie-count`.

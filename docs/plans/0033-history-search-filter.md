@@ -1,6 +1,6 @@
 # Plan: History search (by dish name) + date filter
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-09-13
 - **Plan #**: 0033
 

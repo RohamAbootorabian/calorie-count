@@ -1,6 +1,6 @@
 # Plan: Database schema + Row-Level Security (Phase A foundation)
 
-- **Status**: Approved (revised after multi-agent review 2026-06-19)
+- **Status**: **Done** (executed 2026-06-19; two-user RLS isolation proof still open — see Execution log)
 - **Created**: 2026-06-19
 - **Plan #**: 0001
 

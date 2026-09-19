@@ -1,6 +1,6 @@
 # Plan: Profile health info (allergies + medical conditions) + centered inputs
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-09-13
 - **Plan #**: 0031
 
@@ -175,7 +175,7 @@ deduped. **Verdict: NEEDS CHANGES → 2 blockers + should-fixes resolved → APP
 ## Execution log
 Implemented per the approved plan + resolutions.
 
-- **`supabase/migrations/20260913_profile_health.sql`** — 4 columns on `profiles`
+- **`supabase/migrations/20260913120000_profile_health.sql`** — 4 columns on `profiles`
   (`has_allergies`/`has_conditions` bool not null default false; `allergies_note`/`conditions_note`
   text) with `char_length <= 500` **and** `(flag or note is null)` checks. Applied via `db push`.
 - **`src/types/database.ts`** — regenerated; profiles Row/Insert/Update gained the 4 fields.

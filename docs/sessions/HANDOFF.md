@@ -3,66 +3,52 @@
 
 # Handoff → Next Session
 
-_Last updated: 2026-08-04 (session 18)_
+_Last updated: 2026-09-19 (docs-reconciliation session)_
 
 ## Where we are
-**Plans 0015 (edit a saved meal) and 0016 (photo lightbox) are both DONE, built,
-user-web-verified, and pushed.** The tree is clean, `npx tsc --noEmit` passes, `expo lint`
-is clean. Latest shipped feature = the full-screen photo lightbox. The next mobile feature
-chosen is **plan 0018 (weekly calorie trend)** — its plan doc is written and **Approved**
-(4-lens review done, 1 blocker resolved) but **not yet executed**.
+**Plans 0001–0040 are all executed and pushed** (0017 abandoned). Latest shipped feature =
+**plan 0040, smart meal reminders** (local notifications). Tree clean, `npx tsc --noEmit` passes.
+This session made no code changes: it was a docs cleanup. The previous handoff was stale
+(session 18, pointing at plan 0018), so read `docs/JOURNAL.md` for the 0018→0040 history.
 
 ## What changed recently
-- **Plan 0015 DONE** — edit a previously-saved meal (first UPDATE surface): `update_meal_log`
-  RPC migration (deployed), `useMealDetail` + `seedFormFromMealLog`, shared `MealEditorForm`
-  extracted from `meal-review`, `edit-meal-screen` + guarded `meal-edit` route, History Edit
-  affordance.
-- **Plan 0016 DONE** — full-screen photo lightbox: tap a History thumbnail (with a minted
-  signed URL) → aspect-correct full-screen view; ✕ / backdrop / Android-back dismiss. Pure
-  client, no migration; reuses the in-memory `useSignedThumbnails` URL.
-- **Plan 0017 ABANDONED** — a brief spike to build a separate Next.js **web** repo on the
-  shared backend was explored, then dropped by product decision to refocus on mobile; the
-  standalone `calorie-count-web` folder was deleted. Plan kept for the record only.
-- **Plan 0018 APPROVED (not executed)** — weekly calorie trend (7-day bar chart + weekly
-  averages), a pure-client widening of `useDailyTotals`. Plan + review done; ready to build.
-- **Docs reconciliation (2026-08-04)** — aligned all living docs with the code's real AI
-  model (**OpenAI `gpt-4o-mini`**, not Claude/Gemini); added ADR-0003; see the latest
-  JOURNAL entry.
+- **Plans 0018–0028** — weekly/monthly trends, goal line, plan-progress rings, device-timezone
+  fixes + midnight rollover, Home Daily/Weekly/Monthly switcher, meal text note, manual meal date.
+- **Plans 0029–0036** — single-tap "Analyze meal", SF Symbol tab icons, profile allergies +
+  conditions (fed to the AI) with a red allergen warning, History search + date filter, health
+  step in Onboarding, manual calorie/macro targets, manually add a meal item.
+- **Plans 0037–0039** — DRY refactors: `useMealForm`, `useOwnedMealRows`, shared `SelectGroup`.
+- **Plan 0040** — opt-in breakfast/lunch/dinner reminders that fire only if that window is
+  unlogged (local `expo-notifications`, reconcile on foreground/save/settings; prefs in
+  AsyncStorage per user).
+- **Docs reconciliation (2026-09-19)** — the Status line had never been flipped to Done for 0001 and
+  0029–0038; all fixed. Also fixed 0031's migration filename and the project path in CLAUDE.md.
 
 ## Next steps (pick up here)
-1. **Execute plan 0018** — `docs/plans/0018-weekly-trend.md` (status: Approved). A
-   pure-client 7-day calorie trend: a co-located `useWeeklyTotals` (widened clone of
-   `useDailyTotals` — same `.eq('user_id')` + `Pick<>` allowlist; 8-day window; day-keys +
-   weekday labels from a noon-UTC seed via UTC accessors only, per review B1) + a
-   `trend-screen` (7 local bars + plain-Text weekly averages) + a `trends` route registered
-   next to `meal-edit` + a "Weekly trend" button on the dashboard. No migration. Extract the
-   shared `makeDayFormatter` from `use-daily-totals.tsx`.
-2. Other open candidates (user's call): History **pagination** past `limit(100)`; the
-   deferred **real-iPhone pass** (native `Intl` tz + `cacheKey` + 0007 camera + 0012 delete
-   confirm); per-macro trend / goal-overlay follow-ups named in plan 0018.
+1. **Two-user RLS isolation proof** (security; deferred since plan 0001, never recorded as done).
+   Go through `/plan` first: with two test accounts on prod, prove that A cannot read, update, or
+   delete B's rows in every table or B's objects in the `meal-photos` bucket.
+2. **Real-iPhone verification pass.** Many plans are "user device-verify pending" (0018–0036, see
+   the JOURNAL "Pending" lines) plus 0040 reminders, native `Intl` tz on Hermes (0014/0022),
+   `cacheKey` (0013), 0007 camera, 0012 delete confirm.
+3. Candidates (user's call): History pagination past `limit(100)` (0033 search already reaches
+   older meals); `DailyGoalsCard` extraction (0035 tech debt); per-macro trend.
 
 ## Open questions / risks
-- **0015's `update_meal_log` migration is already deployed** to prod (project ref
-  `vldpfoczswakghkrkyrm`). The next planned work (0018 weekly trend) is pure-client — no
-  new migration.
-- **Native `Intl` timeZone (0014)** — Hermes without full-ICU can *silently* ignore the
-  `timeZone` option (no throw → device-local bucket). Web is fine; the deferred iPhone
-  pass MUST confirm tz is honored on-device.
-- **Native `cacheKey` (0013)** — web ignores `expo-image` `cacheKey`; the real
-  byte-survival-across-rotation only matters on native — verify in the iPhone pass.
-- **0011 cron** still not observed firing on schedule (path proven manually); optional
-  spot-check `select * from cron.job_run_details order by start_time desc limit 5;`.
-- **Tracked obligations unchanged:** account/bulk self-serve deletion (still email-routed);
-  CORS prod origin + public-URL privacy mirror; custom SMTP; carry-through drift (0009);
-  real-iPhone pass (now also covers native Intl tz + cacheKey + the 0007 camera + 0012
-  delete confirm); real tab art; OpenAI cap N=50/user/day. Legal: COMPANY_NAME "Heart
-  Harmona", CONTACT_EMAIL saba@heartharmona.com.
+- **Process gap:** step 5 ("mark the plan Done") was being skipped, and so was `/session-end`
+  (this handoff went a month stale). Flip the Status line in the same commit as the JOURNAL entry.
+- **Native `Intl` timeZone**: Hermes without full-ICU can *silently* ignore `timeZone`. Only
+  the iPhone pass can confirm it.
+- **0011 cron** still not observed firing on schedule; spot-check
+  `select * from cron.job_run_details order by start_time desc limit 5;`.
+- **Tracked obligations:** self-serve account/bulk deletion (still email-routed); CORS prod
+  origin + public-URL privacy mirror; custom SMTP; real tab art; OpenAI cap N=50/user/day.
+  Legal: COMPANY_NAME "Heart Harmona", CONTACT_EMAIL saba@heartharmona.com.
 
 ## How to resume
-Run `/session-start`. Node is via nvm — if `node`/`npm` are missing, `source ~/.zshrc`.
-Work from `/Users/roham_abt/Desktop/calorie count` (quote the space). Build **sequentially
-on `main`** (commit straight, no PRs). **Converse in Persian.** Expo web dev server:
-`npx expo start --web --port 8081` (8081 is the only origin `_shared/cors.ts` allows);
-web-verify compiles via `expo-router/entry.bundle?platform=web` (HTTP 200, zero `*Error`).
-Supabase CLI authed via the macOS keychain; migrations/verification SQL go through the
+Run `/session-start`. Node is via nvm; if `node`/`npm` are missing, `source ~/.zshrc`.
+Work from `/Users/roham_abt/Desktop/Projects/calorie-count`. Build **sequentially on `main`**
+(commit straight, no PRs). **Converse in Persian.** Expo web dev server:
+`npx expo start --web --port 8081` (8081 is the only origin `_shared/cors.ts` allows).
+Supabase CLI is authed via the macOS keychain; migrations/verification SQL go through the
 Management API; project ref `vldpfoczswakghkrkyrm`. Edge functions use **Deno**.

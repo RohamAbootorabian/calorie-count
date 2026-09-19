@@ -1928,3 +1928,23 @@ detect revoked permission (R5); leak-safe cancel-aborts-schedule (R6); barrel ex
 
 **Verified.** tsc 0; expo lint 0; full web export success (native module stays out of the web bundle).
 Adds `expo-notifications`, but local notifications run in Expo Go on iOS → test via reload, no dev build.
+
+---
+
+## 2026-09-19 — Docs reconciliation: plan statuses, handoff, project path
+
+**What we did**
+- Flipped the Status line to **Done** for plans **0001** and **0029–0038**. All of them were executed
+  and committed, but their header still said "Approved". Plan 0001's status notes that the two-user
+  RLS isolation proof (deferred in its Execution log) is still open.
+- Fixed the migration filename in 0031's Execution log (`20260913120000_profile_health.sql`).
+- Rewrote `docs/sessions/HANDOFF.md`. It was stale since session 18 (2026-08-04) and pointed at
+  plan 0018; it now reflects plan 0040 as the latest work.
+- Fixed the project-root path in `CLAUDE.md` (`Desktop/Projects/calorie-count`).
+
+**Why**
+An audit at session start found that the pipeline's step 5 ("mark the plan Done") and `/session-end`
+had been skipped for weeks. Anyone orienting from the plan headers or the handoff would have seen 11
+"open" plans and a month-old next step. No code changed.
+
+**Open follow-up:** the two-user RLS proof from plan 0001 is now next step #1 in the handoff.

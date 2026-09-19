@@ -1,6 +1,6 @@
 # Plan: Red allergen warning in the meal analysis result
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → **Approved** → In Progress → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done**
 - **Created**: 2026-09-13
 - **Plan #**: 0032
 
