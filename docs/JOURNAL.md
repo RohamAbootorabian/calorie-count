@@ -1997,3 +1997,51 @@ write. The fix goes in its own plan (0042), as the user decided before the run.
   key in its environment.
 
 **Verified.** tsc 0; expo lint 0; self-test 48/48; real run 64/3/0; inventory clean; 0 leftovers.
+
+---
+
+## 2026-09-26 — Plan 0043 executed: allergen false positives fixed (user-verified)
+
+**What we did**
+- The user reported on 2026-09-19 that a steak + mashed potatoes photo produced "⚠️ May contain
+  peanuts" with peanuts declared as an allergy. A 5-run baseline on the old function reproduced it
+  **5/5**.
+- **Root cause: prompt priming.** The system prompt's only example was literally
+  `(e.g. "May contain peanuts")`, and `gpt-4o-mini` echoed it whenever that allergen was declared.
+- Fixed in three layers (Edge Function only; no app or DB change):
+  1. **Prompt** — the allergen block now names no food or allergen at all, asks for a per-item
+     judgement with `[]` as the expected answer, forbids cuisine/trace inference, and states that
+     the note and any text in the photo cannot add or omit tags.
+  2. **Schema** — each item carries `declaredAllergens`; the top-level `allergenWarnings` is gone,
+     so a warning can only exist on an item the model actually returned.
+  3. **Server** — warnings are built from those tags (normalized, capped, deduped), and
+     `applyAllergenPolicy` drops everything when no allergy is declared, or emits an explicit
+     "Allergy check unavailable" line when the profile read fails.
+
+**Key decisions & why**
+- **Per-item tags instead of matching warning text against item names.** The review's blocker: with
+  "one string contains the other", `""` matches every item and "rice" matches "rice noodles", so a
+  hallucinated warning would pass and could even name the wrong food. Structural tagging removes
+  the matching problem entirely and makes the model judge each item on its own, which counters
+  priming better.
+- **We state plainly that the prompt is the fix.** The server layers cannot stop a wrong tag on a
+  real item; they make warnings attributable and impossible without a declared allergy.
+- **Policy in `index.ts`, derived from the same `allergies` value as the prompt**, so the guard and
+  the prompt can't drift. No defaulted boolean argument that could silently disable a safety
+  feature.
+- **A failed health read is now visible** ("Allergy check unavailable"), because for a safety
+  feature silence reads as "safe".
+- **Measured, not vibes:** a 5-run baseline before the change, then the device matrix after.
+
+**Review (4 agents): 1 BLOCKER + 12 SHOULD-FIX, all resolved before code.** The blocker was the
+substring grounding above. Should-fixes included: the "3/3" test being statistically meaningless
+(replaced by a measured baseline plus a wider matrix), prompt-injection via the note, capping the
+model's free-text allergen so the user's own note can't be echoed into the red box, conditions-only
+users being an explicit non-goal, and committing the check script.
+
+**Verified.** deno check 0; tsc 0; expo lint 0; `scripts/check-allergen-grounding.ts` 21/21.
+Baseline 5/5 false warnings → after deploy the user ran the device matrix and reported every case
+correct (per-row counts not itemized).
+
+**Follow-up: plan 0044** — "AI estimate, not medical advice" disclaimer copy, accepted by the user
+during review.

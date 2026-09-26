@@ -21,7 +21,9 @@
  * path/uid, the Authorization header/JWT, photo bytes/base64, any signed URL,
  * the parsed MealAnalysis (health data), the user note (health-adjacent free
  * text, plan 0020), the profile HEALTH CONTEXT (declared allergies/conditions
- * free text, plan 0031 — health PII), and the raw OpenAI response body.
+ * free text, plan 0031 — health PII), the per-item `declaredAllergens` tags and
+ * built `allergenWarnings` + the health-read status (plan 0043 — they reveal
+ * declared allergies), and the raw OpenAI response body.
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -29,7 +31,11 @@ import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
 import { corsHeaders, handlePreflight } from "../_shared/cors.ts";
 import { analyzeWithOpenAI } from "./openai.ts";
-import { isNoFood } from "./meal-analysis.ts";
+import {
+  applyAllergenPolicy,
+  type HealthStatus,
+  isNoFood,
+} from "./meal-analysis.ts";
 
 const BUCKET = "meal-photos";
 const MAX_BYTES = 10 * 1024 * 1024; // matches the bucket's 10 MB cap.
@@ -88,15 +94,24 @@ async function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | typeof TIM
 /**
  * Best-effort declared health context (plan 0031). Reads the caller's own
  * allergies/conditions via their RLS-scoped client and formats a compact string
- * for the prompt — only from flags that are true with a non-empty note. Returns
- * undefined on ANY failure/timeout/absence so analysis is never blocked. NEVER
- * logs the row/value/error (health PII): the catch logs a static string only.
+ * for the prompt — only from flags that are true with a non-empty note. Never
+ * throws: ANY failure/timeout → `status: "unavailable"` (plan 0043 — surfaced as
+ * "allergy check unavailable", never as a silent "safe"), so analysis is never
+ * blocked. NEVER logs the row/value/error (health PII): static strings only.
  */
+type HealthContext = {
+  text?: string;
+  allergiesDeclared: boolean;
+  status: HealthStatus;
+};
+const UNAVAILABLE: HealthContext = { allergiesDeclared: false, status: "unavailable" };
+const NONE: HealthContext = { allergiesDeclared: false, status: "none" };
+
 async function buildHealthContext(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   uid: string,
-): Promise<string | undefined> {
+): Promise<HealthContext> {
   try {
     const q = supabase
       .from("profiles")
@@ -104,7 +119,7 @@ async function buildHealthContext(
       .eq("id", uid)
       .maybeSingle();
     const res = await withTimeout(q, HEALTH_TIMEOUT_MS);
-    if (res === TIMEOUT) return undefined;
+    if (res === TIMEOUT) return UNAVAILABLE;
     const { data, error } = res as {
       data:
         | {
@@ -116,18 +131,24 @@ async function buildHealthContext(
         | null;
       error: unknown;
     };
-    if (error || !data) return undefined;
+    if (error) return UNAVAILABLE;
+    if (!data) return NONE;
 
     const parts: string[] = [];
     const allergies = data.has_allergies ? (data.allergies_note ?? "").trim() : "";
     const conditions = data.has_conditions ? (data.conditions_note ?? "").trim() : "";
     if (allergies) parts.push(`Food allergies / sensitivities: ${allergies}`);
     if (conditions) parts.push(`Medical / physical conditions: ${conditions}`);
-    return parts.length > 0 ? parts.join(". ") : undefined;
+    return {
+      text: parts.length > 0 ? parts.join(". ") : undefined,
+      // Same `allergies` value that put allergies into the prompt → can't drift.
+      allergiesDeclared: allergies.length > 0,
+      status: parts.length > 0 ? "ok" : "none",
+    };
   } catch {
     // Static string ONLY — never the caught error, row, or value (health PII).
     console.error("health-context fetch failed (best-effort; skipped)");
-    return undefined;
+    return UNAVAILABLE;
   }
 }
 
@@ -221,7 +242,7 @@ Deno.serve(async (req) => {
     // never fails an analysis that would otherwise succeed. Placed AFTER the cost
     // guard so only requests that will hit OpenAI pay for it. NEVER logged (health
     // PII): the catch logs a static string only, never the row/value/error object.
-    const healthContext = await buildHealthContext(supabase, uid);
+    const health = await buildHealthContext(supabase, uid);
 
     // --- Call OpenAI with its own abort-timeout (B4) ----------------------
     const base64 = encodeBase64(new Uint8Array(buffer));
@@ -235,7 +256,7 @@ Deno.serve(async (req) => {
         mimeType,
         signal: controller.signal,
         note,
-        healthContext,
+        healthContext: health.text,
       });
     } finally {
       clearTimeout(aiTimer);
@@ -246,7 +267,10 @@ Deno.serve(async (req) => {
     // Empty / degenerate result → typed `no_food` (plan Q4).
     if (isNoFood(result.analysis)) return fail(origin, "no_food");
 
-    return json(origin, { ok: true, analysis: result.analysis });
+    // Deterministic allergen policy (plan 0043): no declared allergy → no warning;
+    // a failed health read → an explicit "check unavailable" line, never silence.
+    const analysis = applyAllergenPolicy(result.analysis, health);
+    return json(origin, { ok: true, analysis });
   } catch (err) {
     // Catch-all: log OUR typed message only — never the upstream/PII payload.
     console.error("analyze-meal error:", err instanceof Error ? err.message : "unknown");

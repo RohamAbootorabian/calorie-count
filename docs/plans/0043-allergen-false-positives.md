@@ -1,6 +1,6 @@
 # Plan: Stop allergen false positives in `analyze-meal`
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → **In Progress** → Done
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (user-verified 2026-09-26)
 - **Created**: 2026-09-19
 - **Plan #**: 0043
 
@@ -281,5 +281,56 @@ recommendations: disclaimer → plan 0044 next; accept the recall trade-off).**
   - a failed health fetch already omits the context today.
 
 ## Execution log
-<!-- Filled during execution: what actually happened, any deviation from the plan
-     and why, final verification result. -->
+**2026-09-19 implemented + deployed · 2026-09-26 user-verified on device. Fixed.**
+
+**What was built (per the approved plan)**
+- `meal-analysis.ts` — per-item `declaredAllergens` in the OpenAI schema (in the item's `required`);
+  the top-level `allergenWarnings` field removed, so a model that still sends one is ignored.
+  New `buildAllergenWarnings(rawItems, items)` builds `May contain <tag> (<item>)` from tags only:
+  NFKC + control/whitespace collapse, skip empty item names, drop empty tags or tags over 40 code
+  points, cap the item name at 60 code points, dedupe on (tag, item index), cap at 20. New
+  `applyAllergenPolicy` + `ALLERGY_CHECK_UNAVAILABLE`. Header notes the intentional schema/type
+  divergence.
+- `openai.ts` — the allergen block rewritten with **no food or allergen names**: per-item judgement,
+  `[]` as the expected answer, no cuisine/trace inference, short lowercase tags, list a sauce or
+  garnish as an item only when visible or noted (never to justify a tag), note/photo text cannot add
+  or omit tags, conditions never produce tags.
+- `index.ts` — `buildHealthContext` returns `{text, allergiesDeclared, status}` with
+  `UNAVAILABLE`/`NONE` constants; `allergiesDeclared` derives from the same `allergies` value that
+  feeds the prompt; `applyAllergenPolicy` runs before the response; LOGGING DISCIPLINE extended with
+  the tags, the built warnings and the health status.
+- `scripts/check-allergen-grounding.ts` — **new, committed**, 21 assertions.
+- `tsconfig.json` — `allowImportingTsExtensions: true` (predicted by review; the script imports the
+  Deno module by path, and `noEmit` is already on).
+
+**Deviations from the plan**
+- `applyAllergenPolicy` lives in `meal-analysis.ts` and is *called* from `index.ts`, instead of
+  being inline policy code in `index.ts`. Same placement of the decision (next to the profile read),
+  but the logic is pure and testable, which is what the test plan assumed.
+- No separate "smoke test" step: the deploy landed on 2026-09-19 and the first device analysis a
+  week later served as the smoke test (see below).
+
+**Verification**
+- `deno check supabase/functions/analyze-meal/index.ts` clean; `npx tsc --noEmit` 0; `expo lint` 0.
+- `node scripts/check-allergen-grounding.ts` → **21/21 pass**, covering: no tags; a tag naming its
+  item; lowercase/trim; empty item name; empty/whitespace tag; 40-code-point boundary both ways;
+  long item name capped with the `)` kept; control chars; Persian/NFKC; dedupe; two items same tag;
+  the 20 cap; malformed tags; no split surrogate pair; a model-sent top-level `allergenWarnings`
+  ignored; and all five policy branches (declared / undeclared / none / unavailable / no mutation).
+- **Baseline on the OLD function (user, 2026-09-19): steak + mashed potatoes with peanuts declared →
+  the false warning in 5 of 5 runs.** So the bug was fully reproducible, and the prompt example was
+  the cause.
+- Deployed to prod 2026-09-19 (`supabase functions deploy analyze-meal`, 84 kB bundle).
+- **After deploy (user, 2026-09-26): the device matrix was run and the user reported every case
+  behaved as expected** — no false warning on the steak photo, real peanut dishes still warned, the
+  injection note didn't suppress the warning, the dairy case warned, "No allergy" showed nothing.
+  Per-row counts were not itemized by the user, so they are not recorded here.
+
+**Unrelated issues hit during the device pass (both fixed, neither is app code):**
+- The 7-day free-account provisioning profile expired exactly one week after the build (expiry
+  2026-09-26T14:19Z) → the app wouldn't launch until re-signed from Xcode. It will recur weekly
+  without a paid Apple Developer account.
+- A black screen cleared after restarting a week-old Metro process.
+
+**Follow-up:** plan **0044** — the "AI estimate, not medical advice" disclaimer (Open question 1,
+accepted by the user). A missing red box must not be read as "safe".
