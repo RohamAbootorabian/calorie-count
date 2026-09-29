@@ -2045,3 +2045,46 @@ correct (per-row counts not itemized).
 
 **Follow-up: plan 0044** — "AI estimate, not medical advice" disclaimer copy, accepted by the user
 during review.
+
+---
+
+## 2026-09-26 — Plan 0042 executed: `meal_logs.image_path` namespace hole (B1) closed
+
+**What we did**
+- Added a CHECK constraint on `meal_logs`: `image_path is null or image_path ~ '^<user_id>/[^/]+$'`.
+  That kills all three impacts of the B1 hole plan 0041 proved on prod — planting a row on another
+  user's photo path (which silently broke their next save and hid their photo from the orphan
+  sweep), probing path existence via `23505`, and repointing an own row into a foreign folder.
+- Revoked EXECUTE on the two trigger functions (`handle_new_user`, `set_updated_at`) from PUBLIC,
+  anon and authenticated — the last default-grant surface plan 0041's inventory found.
+- Extended the harness: an ON CONFLICT probe, `code()` accepting several codes, B1 denials pinned to
+  the constraint *name*, trigger-function RPCs pinned to `PGRST202`, and a `control auto-profile`
+  check.
+
+**Key decisions & why**
+- **A CHECK constraint, not an RLS `WITH CHECK`.** The rule reads only the row's own columns and
+  never `auth.uid()`, so it is a data invariant, true for every writer including `service_role`
+  (which bypasses RLS but not constraints). Ownership rules stay in RLS. It also lands *before* the
+  unique index in Postgres's evaluation order, which is what closes the `23505` oracle.
+- **Full shape, not just the prefix.** The review's blocker: `split_part(image_path,'/',1)` would
+  still accept `<uid>/../<victim>/x.jpg`, and the app mints signed URLs from whatever the column
+  holds, so a `..` key would reach Storage's HTTP layer. The regex pins exactly one segment, the
+  same shape `analyze-meal` enforces.
+- **Prove the revokes didn't break signup.** `handle_new_user` swallows its own errors and the
+  harness *upserts* the profile, so a broken trigger would have been invisible. The new
+  `control auto-profile` asserts the row exists before any seeding. (Substantively the revoke is
+  inert: EXECUTE is checked at `CREATE TRIGGER` time, not per fire.)
+- **Named what is deliberately still open:** direct table writes can still bypass the RPCs'
+  self-inflicted guards (item count, far-future `eaten_at`, `verified`), and unbounded
+  `meal_items`/storage writes are an availability risk. All own-data only — recorded so a green run
+  isn't over-read.
+
+**Review (4 agents): 3 BLOCKERS + 15 SHOULD-FIX, all resolved before code.** The blockers were the
+prefix-only constraint, `meal_logs.reparent-own-to-victim` becoming a dual violation (which would
+have made the rerun INVALID), and having no way to detect a broken signup trigger.
+
+**Verified.** Pre-check 0 violating rows (re-run immediately before the push); both migrations
+applied; constraint `convalidated`; `has_function_privilege` false for anon/authenticated on both
+functions; **harness 68/68 PASS, 0 FAIL, 0 INVALID**; **`--self-test` 49/49**; tsc 0; lint 0.
+A network drop during the first self-test left 2 test users, which `--sweep` removed.
+**Pending:** phone smoke test (save, edit, Profile/Goals save, and a fresh signup).

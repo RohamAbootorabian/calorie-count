@@ -1,6 +1,6 @@
 # Plan: Two-user RLS isolation proof (closes plan 0001's deferred test)
 
-- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (B1 hole confirmed → plan 0042)
+- **Status**: ~~Draft~~ → ~~In Review~~ → ~~Approved~~ → ~~In Progress~~ → **Done** (B1 confirmed → **closed by plan 0042**, 2026-09-26)
 - **Created**: 2026-09-19
 - **Plan #**: 0041
 
@@ -466,6 +466,13 @@ consolidated and deduped; the tags show which reviewers raised each one.
     the trigger functions `handle_new_user, set_updated_at` (default grant). The trigger functions
     are also executable by `anon`, but PostgREST doesn't expose them (`PGRST202`, proven above).
   - Hardening option for 0042: revoke them anyway.
+
+**UPDATE 2026-09-26 — B1 is fixed (plan 0042).** A CHECK constraint
+`meal_logs_image_path_namespace` (`^<user_id>/[^/]+$`) now denies foreign paths with `23514` before
+the unique index is reached, and EXECUTE on `handle_new_user`/`set_updated_at` was revoked from
+anon/authenticated (so this log's grant inventory above is stale by exactly those two). The harness
+gained an ON CONFLICT probe and a `control auto-profile` check: the new baseline is **68 PASS / 0
+FAIL / 0 INVALID**, and `--self-test` is **49/49**.
 
 **Outcome:** plan 0001's deferred two-user proof is **closed**. The B1 hole (direct `meal_logs`
 writes bypass `create_meal_log`'s `image_path` namespace check) is confirmed on prod and moves to

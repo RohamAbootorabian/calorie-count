@@ -230,6 +230,13 @@ async function createTestUser(tag: 'a' | 'b'): Promise<TestUser> {
   const { data: auth, error: signInError } = await client.auth.signInWithPassword({ email, password });
   if (signInError || !auth.session) throw new Invalid(`signIn(${tag}): ${errInfo(signInError)}`);
   secrets.push(auth.session.access_token, auth.session.refresh_token);
+
+  // control auto-profile (plan 0042): `handle_new_user` must have created the row
+  // BEFORE any seeding. seedUser() upserts the profile, which would mask a signup
+  // trigger broken by the EXECUTE revokes — this is the only check that can see it.
+  const prof = await must('control auto-profile', admin.from('profiles').select('id').eq('id', data.user.id));
+  if ((prof as unknown[]).length !== 1) throw new Invalid(`control auto-profile(${tag}): trigger did not create the row`);
+
   return { id: data.user.id, client, token: auth.session.access_token, meal: '', item: '', path: '' };
 }
 
@@ -433,12 +440,22 @@ function zeroCount(r: PgResult): Outcome {
   return r.count === 0 ? denied('count 0') : allowed(`count ${r.count}`);
 }
 
-/** Insert / WITH CHECK: denial = exactly this code (+ optional message). `leakCodes` = the attempt revealed something. */
-function code(r: PgResult, want: string, opts: { msg?: string; leakCodes?: string[] } = {}): Outcome {
+/**
+ * Insert / WITH CHECK: denial = one of the expected codes (+ optional message
+ * substring, to pin WHICH check denied it). `leakCodes` = the attempt revealed
+ * something. Several codes are allowed because a row can violate RLS and a table
+ * CHECK at once, and Postgres reports whichever it reaches first (plan 0042).
+ */
+function code(
+  r: PgResult,
+  want: string | string[],
+  opts: { msg?: string; leakCodes?: string[] } = {},
+): Outcome {
   if (!r.error) return allowed('no error');
   const c = r.error.code ?? '';
+  const wanted = Array.isArray(want) ? want : [want];
   if (opts.leakCodes?.includes(c)) return allowed(`leak ${c}`);
-  if (c === want && (!opts.msg || (r.error.message ?? '').includes(opts.msg))) return denied(c);
+  if (wanted.includes(c) && (!opts.msg || (r.error.message ?? '').includes(opts.msg))) return denied(c);
   return unexpected(`error ${errInfo(r.error)}`);
 }
 
@@ -465,6 +482,10 @@ type Case = {
 };
 
 const attacker = (): TestUser => (SELF_TEST ? B : A);
+
+/** Plan 0042: every B1 denial must come from THIS constraint, not another CHECK. */
+const B1_CONSTRAINT = 'meal_logs_image_path_namespace';
+const B1_OPTS = { msg: B1_CONSTRAINT, leakCodes: ['23505'] };
 
 function tableCases(): Case[] {
   const atk = () => attacker().client;
@@ -505,11 +526,20 @@ function tableCases(): Case[] {
     },
     { name: 'meal_logs.update', selfTestable: true, run: async () => zeroRows(await atk().from('meal_logs').update({ dish_name: SENTINEL }).eq('id', B.meal).select('id')) },
     { name: 'meal_logs.insert-as-victim', selfTestable: true, run: async () => code(await atk().from('meal_logs').insert(logRow(B.id, null)).select('id'), '42501') },
-    { name: 'meal_logs.reparent-own-to-victim', selfTestable: true, run: async () => code(await atk().from('meal_logs').update({ user_id: B.id }).eq('id', attacker().meal).select('id'), '42501') },
-    // B1 — image_path namespace bypass via direct table writes (create_meal_log checks it; the policy does not).
-    { name: 'meal_logs.B1-insert-own-row-fresh-victim-path', selfTestable: true, run: async () => code(await atk().from('meal_logs').insert(logRow(attacker().id, photoPath(B.id, 'planted'))).select('id'), '42501') },
-    { name: 'meal_logs.B1-insert-own-row-existing-victim-path', selfTestable: true, run: async () => code(await atk().from('meal_logs').insert(logRow(attacker().id, B.path)).select('id'), '42501', { leakCodes: ['23505'] }) },
-    { name: 'meal_logs.B1-patch-own-image_path-to-victim', selfTestable: true, run: async () => code(await atk().from('meal_logs').update({ image_path: photoPath(B.id, 'planted') }).eq('id', attacker().meal).select('id'), '42501') },
+    // Violates BOTH the RLS WITH CHECK and 0042's namespace constraint (the row's
+    // image_path is in the attacker's namespace) — either denial is correct.
+    { name: 'meal_logs.reparent-own-to-victim', selfTestable: true, run: async () => code(await atk().from('meal_logs').update({ user_id: B.id }).eq('id', attacker().meal).select('id'), ['42501', '23514']) },
+// B1 — image_path namespace bypass via direct table writes. Closed by plan 0042's
+    // table CHECK `meal_logs_image_path_namespace` → `23514` (NOT 42501 like its
+    // neighbours: RLS passes, the constraint denies). The code is pinned to the
+    // constraint NAME so an unrelated value CHECK can't produce a vacuous PASS, and a
+    // `23505` counts as a leak (it would mean the unique index is reachable again).
+    { name: 'meal_logs.B1-insert-own-row-fresh-victim-path', selfTestable: true, run: async () => code(await atk().from('meal_logs').insert(logRow(attacker().id, photoPath(B.id, 'planted'))).select('id'), '23514', B1_OPTS) },
+    { name: 'meal_logs.B1-insert-own-row-existing-victim-path', selfTestable: true, run: async () => code(await atk().from('meal_logs').insert(logRow(attacker().id, B.path)).select('id'), '23514', B1_OPTS) },
+    { name: 'meal_logs.B1-patch-own-image_path-to-victim', selfTestable: true, run: async () => code(await atk().from('meal_logs').update({ image_path: photoPath(B.id, 'planted') }).eq('id', attacker().meal).select('id'), '23514', B1_OPTS) },
+    // The ON CONFLICT form: without the constraint this reaches conflict resolution on
+    // the victim's row (a different oracle); with it, the CHECK denies first.
+    { name: 'meal_logs.B1-upsert-onconflict-victim-path', selfTestable: true, run: async () => code(await atk().from('meal_logs').upsert(logRow(attacker().id, B.path), { onConflict: 'image_path' }).select('id'), '23514', { msg: B1_CONSTRAINT, leakCodes: ['23505', '42501'] }) },
   );
 
   // meal_items
@@ -584,8 +614,10 @@ function rpcCases(): Case[] {
       },
     },
     { name: 'rpc.claim_cleanup_run', selfTestable: false, run: async () => code(await atk().rpc('claim_cleanup_run', { p_min_interval_seconds: 600 }), '42501') },
-    { name: 'rpc.handle_new_user', selfTestable: false, run: async () => anyError(await atk().rpc('handle_new_user')) },
-    { name: 'rpc.set_updated_at', selfTestable: false, run: async () => anyError(await atk().rpc('set_updated_at')) },
+// Not exposed by PostgREST (trigger functions). Pinned to PGRST202 so the run also
+    // proves plan 0042's EXECUTE revokes didn't change their reachability.
+    { name: 'rpc.handle_new_user', selfTestable: false, run: async () => code(await atk().rpc('handle_new_user'), 'PGRST202') },
+    { name: 'rpc.set_updated_at', selfTestable: false, run: async () => code(await atk().rpc('set_updated_at'), 'PGRST202') },
   ];
 }
 
