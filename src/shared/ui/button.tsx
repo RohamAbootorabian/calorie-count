@@ -110,7 +110,10 @@ export function Button({
         {loading ? (
           <ActivityIndicator color={fg} />
         ) : (
-          <Text type="smallBold" style={{ color: mutedFg }}>
+          // `textAlign` matters once the label WRAPS: the row is already centered,
+          // but without it the wrapped lines hug the left edge of the text block
+          // (e.g. the long activity-level options in onboarding/settings).
+          <Text type="smallBold" style={{ color: mutedFg, textAlign: 'center' }}>
             {children}
           </Text>
         )}

@@ -2088,3 +2088,22 @@ applied; constraint `convalidated`; `has_function_privilege` false for anon/auth
 functions; **harness 68/68 PASS, 0 FAIL, 0 INVALID**; **`--self-test` 49/49**; tsc 0; lint 0.
 A network drop during the first self-test left 2 test users, which `--sweep` removed.
 **Pending:** phone smoke test (save, edit, Profile/Goals save, and a fresh signup).
+
+---
+
+## 2026-09-29 — Button labels center when they wrap (one-line UI fix)
+
+**What.** `Button`'s label `Text` now sets `textAlign: 'center'`. The button row was already
+centered, but a label that wraps to a second line had its lines hugging the left edge — visible on
+the long activity-level options ("Moderately active — Moderate exercise 3–5 days/week") in the
+onboarding wizard and the Profile screen.
+
+**Why in `Button` and not at the call site.** Every button in the app is center-aligned by
+construction (`styles.base` + `styles.content`), so a wrapped label hugging the left was a bug
+everywhere, not just in `SelectGroup`. Fixing the primitive keeps the one rule in one place.
+
+**Process note (deliberate deviation).** The user asked for this one-line change without the usual
+plan + multi-agent review, with session context already ~83% full. Recorded here rather than in a
+plan doc. Scope is one style property on one shared component; no logic, data or API change.
+
+**Verified.** tsc 0; expo lint 0. JS-only (reload) — user to eyeball on the device.
