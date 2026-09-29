@@ -16,10 +16,20 @@
  * `src/constants/legal.ts` extraction (shared with ToS / store metadata) is trivial.
  */
 
+import { LEGAL_ESTIMATE_CAVEAT } from '@/constants/legal';
+
 // --- Legal metadata (confirmed with the user, 2026-06-23) -------------------
 export const COMPANY_NAME = 'Heart Harmona';
 export const CONTACT_EMAIL = 'saba@heartharmona.com';
-/** Human-readable "last updated" shown at the top of the policy. */
+/**
+ * Human-readable "last updated" shown at the top of the policy.
+ *
+ * CONVENTION (settled in plan 0044): bump ONLY on a material change in data
+ * practice or in the categories collected — not for clarifications or re-wording
+ * (git precedent: bumped for 0031's health-data category, not for 0012/0020 copy).
+ * The same date also anchors the "As of <date>, OpenAI states…" third-party claim
+ * below, so RE-VERIFY that statement whenever you do bump it.
+ */
 export const EFFECTIVE_DATE = 'September 13, 2026';
 
 // --- Outbound references (open in a new tab / in-app browser) ---------------
@@ -53,7 +63,8 @@ export const PRIVACY_SECTIONS: PolicySection[] = [
   {
     heading: 'How your meal photos are analyzed',
     body: [
-      'When you analyze a meal, your photo, a short instruction, any note you added, and — if you have declared them — your food allergies and medical conditions are sent — through our own server, never directly from your phone — to OpenAI (the GPT-4o-mini vision model), which returns an estimate of the foods and their nutrition and can flag likely allergen conflicts.',
+      'When you analyze a meal, your photo, a short instruction, any note you added, and — if you have declared them — your food allergies and medical conditions are sent — through our own server, never directly from your phone — to OpenAI (the GPT-4o-mini vision model), which returns an estimate of the foods and their nutrition and can attempt to flag likely allergen conflicts.',
+      LEGAL_ESTIMATE_CAVEAT,
       `As of ${EFFECTIVE_DATE}, OpenAI states that it does not use data submitted through its API to train its models. We can't control a third party's terms, so please review OpenAI's own privacy policy for the current details.`,
     ],
   },

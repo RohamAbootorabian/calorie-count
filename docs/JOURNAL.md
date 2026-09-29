@@ -2107,3 +2107,41 @@ plan + multi-agent review, with session context already ~83% full. Recorded here
 plan doc. Scope is one style property on one shared component; no logic, data or API change.
 
 **Verified.** tsc 0; expo lint 0. JS-only (reload) — user to eyeball on the device.
+
+---
+
+## 2026-09-29 — Plan 0044: say out loud that the allergen check is an estimate
+
+**What.** Static safety copy in three places, plus one new `src/constants/legal.ts` so the UI and the
+privacy policy can't drift: a caption under the meal review card, a hint under the allergy question
+and another under the conditions question (onboarding + Profile), and a matching paragraph in §2 of
+the privacy policy.
+
+**Why now.** Plan 0043 made the allergen warning much more precise — it now fires only on a per-item
+tag matching a declared allergy. That is the right trade, but it moves the risk from false alarms to
+**false reassurance**: once the box is trustworthy, its absence starts to look like a verdict. It
+isn't one, and nowhere in the app said so.
+
+**The two things the review changed, and they're the interesting part.**
+- **A missing red box means three different things**, not one: the model checked and found nothing,
+  the user declared no allergies so no check ran at all, or it's a History edit where a check never
+  runs. My first draft said "allergen alerts are AI estimates", which is only true in the first case
+  and quietly *reassures* in the other two. The shipped caption instead states what is checked and
+  when — "we only check allergies you've entered in your profile, and only when a meal is analyzed" —
+  which is true on every screen, for every user, and reads correctly under 0043's "Allergy check
+  unavailable" line too.
+- **Conditions are not allergies.** 0043 checks declared *allergies* only, so someone who types
+  "celiac" into the conditions box gets no check and no box, silently, forever. That behaviour lived
+  in a code comment and nowhere else. It now has a hint on the conditions question pointing at the
+  allergy field.
+
+**Kept unconditional on purpose.** Showing the caption only when the user has allergies would mean
+reading health data on every render of the review card, and would hide the disclaimer from exactly
+the users who get no check. Muted `textSecondary` keeps the red box dominant (contrast measured:
+5.94:1 light, 10.1:1 dark).
+
+**Verified.** tsc 0; expo lint 0; user device pass on both hints, a clean meal, a warning meal, a
+History edit, the Privacy screen, and dark mode. JS-only — no schema, no Edge Function.
+
+**Still open (now tracked in HANDOFF).** No Terms of Service; App Review 1.4.1 and the App Privacy
+"Health & Fitness" label; all safety copy is English-only.

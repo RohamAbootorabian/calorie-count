@@ -26,6 +26,7 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
+import { ALLERGY_FIELD_HINT, CONDITION_FIELD_HINT } from '@/constants/legal';
 import { Spacing } from '@/constants/theme';
 import { useAuth, useUser } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -597,6 +598,7 @@ export function SettingsScreen() {
             Yes. Fed to the meal-analysis AI (server-side) to flag allergen conflicts. */}
         <HealthQuestion
           label="Food allergies or sensitivities"
+          description={ALLERGY_FIELD_HINT}
           noLabel="No food allergies"
           yesLabel="I have food allergies"
           notePlaceholder="e.g. peanuts, shellfish, lactose"
@@ -608,6 +610,7 @@ export function SettingsScreen() {
         />
         <HealthQuestion
           label="Medical or physical conditions"
+          description={CONDITION_FIELD_HINT}
           noLabel="No conditions"
           yesLabel="I have a condition"
           notePlaceholder="e.g. diabetes, high blood pressure"

@@ -16,6 +16,13 @@ import { HEALTH_NOTE_MAX } from '../lib/profile-form';
 
 export type HealthQuestionProps = {
   label: string;
+  /**
+   * Static helper copy under the label, before the No/Yes buttons (plan 0044) — so a
+   * screen reader reads it BEFORE the options. Deliberately not called `hint`: that
+   * name already means the note `Input`'s character counter below, which is clamped
+   * to one line and only appears after "Yes" (too late to inform the choice).
+   */
+  description?: string;
   noLabel: string;
   yesLabel: string;
   notePlaceholder: string;
@@ -28,6 +35,7 @@ export type HealthQuestionProps = {
 
 export function HealthQuestion({
   label,
+  description,
   noLabel,
   yesLabel,
   notePlaceholder,
@@ -42,6 +50,11 @@ export function HealthQuestion({
       <Text type="smallBold" themeColor="textSecondary">
         {label}
       </Text>
+      {description ? (
+        <Text type="small" themeColor="textSecondary">
+          {description}
+        </Text>
+      ) : null}
       <Button variant={!value ? 'primary' : 'secondary'} onPress={() => onSelect(false)} fullWidth>
         {noLabel}
       </Button>

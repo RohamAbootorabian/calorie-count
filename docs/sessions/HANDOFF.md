@@ -3,13 +3,14 @@
 
 # Handoff → Next Session
 
-_Last updated: 2026-09-19 (docs reconciliation + plan 0041 RLS proof)_
+_Last updated: 2026-09-29 (plan 0044, allergen safety copy)_
 
 ## Where we are
-**Plans 0001–0041 are all executed and pushed** (0017 abandoned). Latest app feature = **plan
-0040, smart meal reminders**. Latest work = **plan 0041, the two-user RLS proof on prod**. Result:
-64 PASS / 3 FAIL. The 3 FAILs are one real hole (B1, below), and **plan 0042 is next to fix it**.
-Tree clean; tsc and lint pass.
+**Plans 0001–0044 are all executed and pushed** (0017 abandoned). Latest app feature = **plan
+0040, smart meal reminders**. The last three: **0043** killed the allergen false positives (the
+prompt's own `"May contain peanuts"` example was priming the model), **0042** closed RLS hole B1 —
+`scripts/check-rls.ts` is now **68/68 PASS**, `--self-test` 49/49 — and **0044** added the
+"this is an AI estimate, not medical advice" copy. Tree clean; tsc and lint pass.
 
 ## What changed recently
 - **Plans 0018–0028** — weekly/monthly trends, goal line, plan-progress rings, device-timezone
@@ -32,15 +33,9 @@ Tree clean; tsc and lint pass.
   0029–0038; all fixed. Also fixed 0031's migration filename and the project path in CLAUDE.md.
 
 ## Next steps (pick up here)
-1. **Plan 0042: close the `image_path` namespace hole (B1).**
-   - **The hole:** the `meal_logs` INSERT/UPDATE policies check only `user_id`, so direct table
-     writes bypass `create_meal_log`'s `split_part(image_path,'/',1) = auth.uid()` check.
-   - **Fix direction:** a migration adding `image_path is null or split_part(image_path,'/',1) =
-     auth.uid()::text` to the `meal_logs_insert`/`meal_logs_update` WITH CHECK, or column grants.
-     Optionally also revoke EXECUTE on the trigger functions `handle_new_user`/`set_updated_at`
-     from anon/authenticated.
-   - **Verify:** rerun `scripts/check-rls.ts`; the 3 `meal_logs.B1-*` cases must turn PASS and
-     the rest stay PASS.
+1. **Plan 0042's phone smoke test is the one outstanding item** — save a photo meal, edit it from
+   History, save Profile and Goals, and sign up a brand-new account. The constraint is live on prod,
+   so a regression here would show as a save failing, not as bad data.
 2. **Real-iPhone verification pass.** Many plans are "user device-verify pending" (0018–0036, see
    the JOURNAL "Pending" lines) plus 0040 reminders, native `Intl` tz on Hermes (0014/0022),
    `cacheKey` (0013), 0007 camera, 0012 delete confirm.
@@ -57,6 +52,14 @@ Tree clean; tsc and lint pass.
 - **Tracked obligations:** self-serve account/bulk deletion (still email-routed); CORS prod
   origin + public-URL privacy mirror; custom SMTP; real tab art; OpenAI cap N=50/user/day.
   Legal: COMPANY_NAME "Heart Harmona", CONTACT_EMAIL saba@heartharmona.com.
+- **Legal / store gaps (named in plan 0044, none started):**
+  - **No Terms of Service.** A non-goal since plan 0010 and never actually tracked until now; the
+    privacy policy is the interim home for the "not medical advice" caveat.
+  - **App Store:** allergy flagging touches App Review 1.4.1 (physical harm), so the store
+    description should carry the same caveat; `profiles.allergies` / `conditions` must appear in the
+    App Privacy "Health & Fitness" label.
+  - **Localization of safety copy:** the app is English-only, yet users may write their allergies in
+    Persian (0043).
 
 ## How to resume
 Run `/session-start`. Node is via nvm; if `node`/`npm` are missing, `source ~/.zshrc`.

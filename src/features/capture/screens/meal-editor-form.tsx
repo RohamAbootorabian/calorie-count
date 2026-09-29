@@ -12,6 +12,7 @@
  */
 import { StyleSheet, View } from 'react-native';
 
+import { ANALYSIS_DISCLAIMER } from '@/constants/legal';
 import { Spacing } from '@/constants/theme';
 import { Button, Card, DateField, Input, Text } from '@/shared/ui';
 import type { Nutrients } from '@/types/nutrition';
@@ -66,19 +67,30 @@ export function MealEditorForm({
 
       {/* Allergen warnings (plan 0032): a RED, top-of-form safety cue when the meal
           likely conflicts with a declared allergy. ⚠️ prefix (not color alone) for
-          accessibility. Review-time only — absent on a History edit (not persisted). */}
-      {form.allergenWarnings && form.allergenWarnings.length > 0 ? (
-        <View
-          style={styles.allergenBlock}
-          accessibilityRole="alert"
-          accessibilityLabel={`Allergen warning: ${form.allergenWarnings.join('. ')}`}>
-          {form.allergenWarnings.map((w, i) => (
-            <Text key={i} type="smallBold" themeColor="danger">
-              ⚠️ {w}
-            </Text>
-          ))}
-        </View>
-      ) : null}
+          accessibility. Review-time only — absent on a History edit (not persisted).
+          The disclaimer below it (plan 0044) is UNCONDITIONAL: a missing warning must
+          not read as "safe", since it also means "no allergy declared" or "History
+          edit, never checked". Grouped in one wrapper so the caption can't be mistaken
+          for the Dish-name input's hint; it is a SIBLING of the alert node, so a screen
+          reader announces the warnings first. No accessible={true} here — it would
+          merge warning + caption into one swipe stop and bury the warning. */}
+      <View style={styles.allergenBlock}>
+        {form.allergenWarnings && form.allergenWarnings.length > 0 ? (
+          <View
+            style={styles.allergenBlock}
+            accessibilityRole="alert"
+            accessibilityLabel={`Allergen warning: ${form.allergenWarnings.join('. ')}`}>
+            {form.allergenWarnings.map((w, i) => (
+              <Text key={i} type="smallBold" themeColor="danger">
+                ⚠️ {w}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+        <Text type="smallBold" themeColor="textSecondary">
+          {ANALYSIS_DISCLAIMER}
+        </Text>
+      </View>
 
       <Input
         label="Dish name"
